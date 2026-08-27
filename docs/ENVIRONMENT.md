@@ -34,10 +34,28 @@ uv pip install "transformers>=4.57.0" accelerate peft datasets \
 # Qwen-VL image preprocessing helpers
 uv pip install qwen-vl-utils
 
-# FlashAttention-2 (Ampere-supported). Takes ~10 min to build.
-# If this fails, skip it — use attn_implementation="sdpa", costs ~15%.
-uv pip install flash-attn --no-build-isolation
+# FlashAttention-2 (Ampere-supported). Prefer a prebuilt wheel over the ~10 min
+# source build — this one matches the pinned stack exactly (cu124 / torch2.5 / cp311):
+uv pip install https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.5.4/flash_attn-2.8.3+cu124torch2.5-cp311-cp311-linux_x86_64.whl
+
+# If no wheel matches your stack, either build from source
+# (uv pip install flash-attn --no-build-isolation) or skip it and use
+# attn_implementation="sdpa" — it costs ~15% and is not worth fighting over.
 ```
+
+Verify it loaded against the GPU, not merely installed:
+
+```bash
+python - <<'PYCHK'
+import torch, flash_attn
+from flash_attn import flash_attn_func
+q = torch.randn(1, 8, 4, 64, device="cuda", dtype=torch.bfloat16)
+print("flash-attn", flash_attn.__version__, "->", tuple(flash_attn_func(q, q, q).shape))
+PYCHK
+```
+
+The real test is `scripts/smoke_test.py` (§6), which loads the model with
+`attn_implementation="flash_attention_2"` and fails loudly if the backend is unusable.
 
 <details>
 <summary>conda equivalent</summary>
@@ -59,20 +77,42 @@ pip install flash-attn --no-build-isolation
 uv pip install --upgrade "git+https://github.com/huggingface/transformers.git"
 ```
 
-## 2. Fonts for Tier B rendering
+## 2. Fonts for Tier B rendering — no root required
 
-Tier B needs a controlled font set, and font diversity is the within-modality control in
-the MSG denominator — so install several deliberately.
+Pillow loads TrueType files **by absolute path**, so no system font installation is
+needed. The `apt-get install fonts-*` line that was here before was unnecessary.
+
+Two sources, neither needing sudo:
+
+- **matplotlib's bundled TTFs** — guaranteed present, since matplotlib is already a
+  dependency. Seven distinct families: DejaVu Sans/Serif/Mono, STIX General, and
+  Computer Modern serif/sans/mono. Enough on their own.
+- **Google Fonts extras** — downloaded into `~/.local/share/fonts/freeflow`, widening
+  both the within-modality control and the render-robustness ablation axes.
 
 ```bash
-sudo apt-get update && sudo apt-get install -y \
-    fonts-dejavu-core fonts-liberation2 fonts-noto-core fonts-freefont-ttf
-fc-list | wc -l                  # sanity check
-fc-list : file family | grep -iE "dejavu|liberation|noto" | head
+python scripts/setup_fonts.py --download     # omit --download for matplotlib's only
 ```
 
-Pin the exact font file paths in `configs/render.yaml` in Phase 0 and never change them
-after Gate 0 — the render config is frozen once it passes.
+Expect ~16 usable families. The script renders a sample with each one and drops any that
+won't rasterise — a font file that exists but fails to render is worse than an absent
+one, because it fails later and silently.
+
+It writes `configs/fonts.yaml` with absolute paths **already split train / held-out**.
+Font diversity is not cosmetic here: re-rendering a span in a different family *is*
+`V_I′`, the denominator of the normalized MSG, and Gate 2 condition (a) requires
+held-out fonts. The held-out set deliberately spans one serif, one sans and one mono —
+a font the model never trained on should not also be a font whose whole *category* it
+never trained on.
+
+Freeze `configs/fonts.yaml` and `configs/render.yaml` once Gate 0 passes, and don't
+touch them again.
+
+### No sudo anywhere?
+
+Nothing else in this file needs it. Keep `HF_HOME` and every dataset path under a
+user-writable directory — use `~/data` in place of `/data` throughout if that applies,
+and adjust the commands below to match.
 
 ## 3. Model weights
 
@@ -94,8 +134,8 @@ Then download. If a small **Qwen3.5-VL** exists, prefer it and keep Qwen3-VL-2B 
 generational control (see PLAN.md §6.1).
 
 ```bash
-export HF_HOME=/data/hf
-mkdir -p $HF_HOME
+export HF_HOME=${HF_HOME:-$HOME/data/hf}   # any user-writable path
+mkdir -p "$HF_HOME"
 
 hf download Qwen/Qwen3-VL-2B-Instruct --local-dir /data/models/Qwen3-VL-2B-Instruct
 # text-only ablation baseline

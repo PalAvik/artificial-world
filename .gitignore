@@ -12,3 +12,6 @@ wandb/
 *.pt
 *.safetensors
 .DS_Store
+
+# generated per-machine by scripts/setup_fonts.py (absolute paths)
+configs/fonts.yaml

@@ -18,18 +18,37 @@ import torch
 from PIL import Image, ImageDraw, ImageFont
 
 
+def find_font(size: int):
+    """Resolve a TrueType font without assuming any system font packages.
+
+    Order: the frozen font set if setup_fonts.py has run, then matplotlib's
+    bundled TTFs (always present, since matplotlib is a dependency), then
+    Pillow's bitmap default as a last resort. No root, no fontconfig.
+    """
+    try:
+        import yaml
+        with open("configs/fonts.yaml") as fh:
+            cfg = yaml.safe_load(fh)
+        path = next(iter(cfg["train"].values()))
+        return ImageFont.truetype(path, size)
+    except Exception:
+        pass
+    try:
+        import matplotlib
+        path = os.path.join(os.path.dirname(matplotlib.__file__),
+                            "mpl-data", "fonts", "ttf", "DejaVuSans.ttf")
+        return ImageFont.truetype(path, size)
+    except Exception:
+        print("  ! no TrueType font resolved — run scripts/setup_fonts.py before Gate 0")
+        return ImageFont.load_default()
+
+
 def render_span(text: str, height: int = 32, pad: int = 6) -> Image.Image:
     """Render a text span as a narrow strip — the Tier B substitution primitive.
 
     Narrow strips rather than square canvases: see docs/COMPUTE.md decision 2.
     """
-    try:
-        font = ImageFont.truetype(
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", height - 2 * pad
-        )
-    except OSError:
-        font = ImageFont.load_default()
-        print("  ! DejaVuSans not found, using default font — install fonts before Gate 0")
+    font = find_font(height - 2 * pad)
     probe = ImageDraw.Draw(Image.new("RGB", (1, 1)))
     width = int(probe.textlength(text, font=font)) + 2 * pad
     img = Image.new("RGB", (width, height), "white")
