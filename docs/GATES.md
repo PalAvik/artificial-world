@@ -12,22 +12,36 @@ research project dissolving into undocumented runs.
 
 ---
 
-## Gate 0 — end of Week 1 · Render legibility
+## Gate 0 — end of Week 1 · Render config
 **Cost: ~1 GPU-hour. Run it before writing anything else.**
 
 Tier B assumes the model can *read* rendered spans. If it can't, every Tier B number
 measures OCR failure rather than representational geometry, and the centrepiece of the
-project is invalid. Check it before building on it.
+project is invalid.
 
-**Metric:** exact-match read-back accuracy at the frozen render config.
+This is **not** a pass/fail on a fixed config. Two knobs trade off directly against
+each other:
+
+- **Fewer visual tokens** — smaller strips, lower `min_pixels` — keep the `V_T`/`V_I`
+  cardinality gap near zero and the sweep cheap.
+- **More visual tokens** — bigger glyphs, higher resolution — make the span legible.
+
+So Gate 0 is a constrained minimisation: **find the render config with the fewest
+visual tokens that still clears the read-back thresholds.** Sweep font size, strip
+height and `min_pixels` jointly; the smoke test reports visual-token count per config.
+
+**Metric:** exact-match read-back accuracy.
 
 | Outcome | Threshold | Action |
 |---|---|---|
-| PASS | ≥95% single word, ≥88% three-word span | Freeze render config. Proceed. |
-| CONDITIONAL | 80–95% | **One** sweep over font size / DPI / contrast / padding. Re-test once. |
+| PASS | ≥95% single word, ≥88% three-word span, at the cheapest config meeting both | Freeze font set, strip geometry and `min_pixels` into `configs/render.yaml`. Proceed. |
+| CONDITIONAL | 80–95% at every config tried | **One** wider sweep — contrast, padding, anti-aliasing, DPI. Re-test once. |
 | FAIL | <80% after that sweep | Tier B cannot lead. Demote to a Tier-A-led plan and re-cost. If Tier A grounding also can't be measured cleanly → **DROP**. |
 
----
+Record the chosen config *and its visual-token count* — the latter is an experiment
+parameter that appears in every subsequent cost estimate, not an incidental default.
+Baseline from the first smoke test: a `75×32` strip at `min_pixels=1024` costs
+**3 visual tokens**, against 71 at the processor's default.
 
 ## Gate 1 — end of Week 3 · Does the gap exist?
 **The first real go/no-go. Everything after this depends on the answer being yes.**

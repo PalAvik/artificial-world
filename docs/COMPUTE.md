@@ -47,8 +47,8 @@ the two views. Sweep it at Gate 0 and freeze it.
 
 ## Measured so far
 
-First smoke test, **B200, bs=1, Pillow fallback font** — provisional, and none of it
-is a gated number (the A100 is the reference machine, `docs/GATES.md`).
+Smoke test on **B200** — provisional. None of it is a gated number; the A100 is the
+reference machine (`docs/GATES.md`).
 
 | Fact | Value |
 |---|---|
@@ -56,47 +56,49 @@ is a gated number (the A100 is the reference machine, `docs/GATES.md`).
 | Parameters | 2.21 B |
 | Hidden states | 25 (24 layers + embeddings), d = 2048 |
 | Vocabulary | 248,320 |
-| Peak memory, bf16 inference | 4.5 GB |
+| Image processor | `Qwen2VLImageProcessor`, `patch_size 16`, `merge_size 2` |
+| Peak memory, bf16 inference | 4.5 GB at bs=1, 4.8 GB at bs=8 |
 | Attention | `flash_attention_2` loaded cleanly on `sm_100` |
 
-**Still needed before these estimates can be replaced:** a real font (the fallback
-invalidates the visual-token count), a batched measurement (227 ms at bs=1 is launch
-overhead on a B200, not throughput), and a run on the A100.
+### Resolved: `min_pixels` controls visual token count
 
-### Finding: the processor upscales narrow strips ~35×
+`min_pixels` maps to the processor's `size.shortest_edge` and is an **area in
+pixels**, not an edge length. At `patch_size 16 × merge_size 2` one visual token
+covers `32×32 = 1024` px, so `min_pixels=1024` is "at least one token".
 
-A `76×32` strip cost **71 visual tokens**. At `patch_size 16 × spatial_merge_size 2`
-each token covers `32×32` px, so the strip's own area implies **~2 tokens**. The
-processor is upscaling to satisfy a minimum resolution, paying for pixels the span
-does not contain.
+| `min_pixels` | Visual tokens for a `75×32` strip | V_T / V_I sequence |
+|---|---|---|
+| default | 71 | 25 / 96 |
+| 1024 | **3** | 25 / **28** |
 
-This is worth fixing before Phase 1, for two reasons — one cheap, one not:
+A 24× reduction, and the two views now differ by 3 tokens rather than 71. That second
+column is the one that matters: the cardinality gap is the asymmetry the
+merge-position design works around (`PLAN.md` §1.1), and it is now nearly closed by
+construction rather than by argument.
 
-- **Compute.** The image view was 96 tokens against the text view's 25. Nearly all of
-  that is upscaling artefact.
-- **Experimental design, which matters more.** The cardinality gap between `V_T` and
-  `V_I` is the asymmetry the merge-position design exists to work around (`PLAN.md`
-  §1.1). Letting it run at 35× when ~1× is available makes the two views differ far
-  more in *shape* than in *content*, for nothing.
+### Unresolved: throughput is still overhead-bound
 
-Fix by lowering the processor's `min_pixels`:
+190 ms at bs=1 and 203 ms at bs=8 — eight times the work for 7% more time. That is
+Python and kernel-launch overhead, not the GPU. A 2.2 B model doing a 25-token forward
+on a B200 should be roughly two orders of magnitude faster than this, so **do not
+record 984 tok/s as a throughput figure**; it is a measurement of dispatch cost.
+
+Planning consequence, and it is a large one. Phase 1 is ~35k items × 4 views ≈ 140k
+forwards:
+
+- looping one item at a time at ~200 ms → **~8 hours**
+- properly batched at a realistic sequence length → **well under an hour**
+
+So the Phase 1 sweep **must batch**, and must never loop item by item. Find the real
+number before trusting any GPU-hour estimate here:
 
 ```bash
-python scripts/smoke_test.py --model Qwen/Qwen3.5-2B --min-pixels 1024
+python scripts/smoke_test.py --model Qwen/Qwen3.5-2B --min-pixels 1024 --bench
 ```
 
-The smoke test prints the processor's actual knob names and flags the upscale ratio,
-so sweep it there and freeze the result into `configs/render.yaml` alongside the font
-config at Gate 0. Treat visual-token count as an **experiment parameter**, not an
-incidental default.
-
-### Note: never persist logits
-
-The vocabulary is 248,320. A single position's distribution is ~1 MB in fp32, so
-2,000 items × 4 views × a shared continuation is terabytes if stored. The JSD metric
-must be **computed streaming, inside the forward pass** — accumulate the divergence
-and discard the logits. Only hidden states at the merge position get written to disk,
-and only for the selected layers.
+That sweeps batch size at seq=512 and prints scaling against bs=1. Where the `vs bs=1`
+column stops rising is where the GPU is actually busy; run the Phase 1 sweep at or
+above that batch size.
 
 ## Throughput and memory (estimates — measure on day one and correct these)
 

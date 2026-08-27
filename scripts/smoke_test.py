@@ -105,6 +105,42 @@ def timed_forward(model, inputs, reps: int = 3) -> tuple[float, float]:
     return (time.perf_counter() - t0) / reps, torch.cuda.max_memory_allocated() / 1e9
 
 
+def bench(model, processor, seq_len: int) -> None:
+    """Sweep batch size at a realistic sequence length.
+
+    A 25-token forward measures Python and kernel-launch overhead, not the GPU.
+    The number that matters for planning is where throughput stops rising with
+    batch size — below that point the accelerator is idle most of the time, and
+    a sweep that loops one item at a time will be overhead-bound end to end.
+    """
+    tok = getattr(processor, "tokenizer", processor)
+    filler = ("The quick brown fox jumps over the lazy dog. " *
+              max(1, seq_len // 9))
+    ids = tok(filler, return_tensors="pt")["input_ids"][:, :seq_len].to("cuda:0")
+    real_len = ids.shape[1]
+
+    print(f"\nthroughput sweep (text only, seq={real_len})")
+    print(f"  {'batch':>6}  {'ms/step':>9}  {'tok/s':>10}  {'GB':>6}  {'vs bs=1':>8}")
+    base = None
+    for bs in (1, 4, 16, 64):
+        batch = ids.repeat(bs, 1)
+        try:
+            dt, mem = timed_forward(model, {"input_ids": batch})
+        except torch.cuda.OutOfMemoryError:
+            print(f"  {bs:>6}  OOM")
+            torch.cuda.empty_cache()
+            break
+        tps = bs * real_len / dt
+        base = base or tps
+        print(f"  {bs:>6}  {dt * 1e3:9.1f}  {tps:10,.0f}  {mem:6.1f}  "
+              f"{tps / base:7.1f}x")
+        del batch
+        torch.cuda.empty_cache()
+    print("  Scaling far below linear means overhead-bound: batch harder before")
+    print("  trusting any GPU-hour estimate. The Phase 1 sweep must batch, never")
+    print("  loop item by item (docs/COMPUTE.md).")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", required=True)
@@ -120,6 +156,10 @@ def main() -> int:
                          "gets upscaled, costing many more visual tokens than its "
                          "content needs.")
     ap.add_argument("--max-pixels", type=int, default=None)
+    ap.add_argument("--bench", action="store_true",
+                    help="sweep batch size at a realistic sequence length to find "
+                         "where throughput stops being overhead-bound")
+    ap.add_argument("--bench-seq", type=int, default=512)
     args = ap.parse_args()
 
     if not torch.cuda.is_available():
@@ -242,6 +282,9 @@ def main() -> int:
         print("    Lower --min-pixels (or widen the strip so upscaling is moot):")
         print("    every wasted visual token costs compute AND widens the")
         print("    cardinality gap between the two views for no added content.")
+
+    if args.bench:
+        bench(model, processor, args.bench_seq)
 
     print()
     if FONT_IS_FALLBACK:
