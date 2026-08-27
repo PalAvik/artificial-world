@@ -57,12 +57,17 @@ Full-FT memory math (2B params): bf16 weights 4.4 GB + bf16 grads 4.4 GB + fp32 
 states 17.6 GB + fp32 master 8.8 GB ≈ 35 GB before activations. 8-bit AdamW drops the
 optimizer states to ~4.4 GB. Both fit; use 8-bit unless it destabilises.
 
-**Attention backend: sdpa by default.** It works on both A100 (`sm_80`) and B200
-(`sm_100`) with no wheel matching, and costs ~15% against FlashAttention-2. Given
-that the throughput numbers below are estimates to be replaced by measurement
-anyway, that 15% is not worth a toolchain fight. Add flash-attn later as a pure
-speedup if it proves worthwhile — but it becomes part of a run's identity under the
-hardware policy, so never compare a flash-attn run against an sdpa one.
+**Attention backend: FlashAttention-2.** One wheel covers both GPUs — FA2 builds
+`sm_100` gencode on CUDA 12.8+, so a CUDA 13 build serves the A100 (`sm_80`) and the
+B200 (`sm_100`) alike. Resolve it with `python scripts/install_flash_attn.py
+--install`, which matches the wheel to the installed torch and then launches a kernel
+to prove it works, rather than trusting that a successful `pip install` means a
+working backend.
+
+`sdpa` stays the per-machine fallback, at roughly 15% slower. Whichever a run used
+goes in its `results/RESULTS.md` row: the backend is part of a run's identity under
+the hardware policy, so an `sdpa` run and a `flash_attention_2` run are not
+comparable to each other.
 
 **A100 is Ampere:** bf16 yes; FP8 and FlashAttention-3 no (Hopper and later only).
 
@@ -89,7 +94,7 @@ report the pair. A ported run without a ported baseline is not a result.
 ```yaml
 model:            Qwen3-VL-2B          # freeze vision tower + train merger & LM
 precision:        bfloat16
-attn:             sdpa                 # every arch, no wheel matching; ~15% vs FA2
+attn:             flash_attention_2    # fallback sdpa; record which, per run
 grad_checkpoint:  true
 lora:             {r: 32, alpha: 64, dropout: 0.05, targets: [q,k,v,o,gate,up,down]}
 max_seq_len:      512                  # text view ~256, image view ~320

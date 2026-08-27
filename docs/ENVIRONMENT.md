@@ -70,12 +70,13 @@ python scripts/check_gpu.py
 ### What upgrading torch breaks
 
 - **flash-attn.** The `+cu124torch2.5` wheel is built against that exact stack and
-  will not import after the upgrade — uninstall it. `attn_implementation="sdpa"`
-  is the default for this project now: it works on every architecture, needs no
-  wheel matching, and costs ~15%. PyTorch's own fused backends also reach new
-  hardware sooner than flash-attn wheels do. Add flash-attn later as a pure
-  speedup, if at all — and if you do, it becomes part of the run's identity
-  under the hardware policy, so don't compare a flash-attn run against an sdpa one.
+  will not import after the upgrade. Uninstall it and re-resolve:
+  `python scripts/install_flash_attn.py --install`. FA2 covers both GPUs here —
+  its build defaults to `FLASH_ATTN_CUDA_ARCHS="80;90;100;110;120"` and emits
+  `sm_100` gencode on CUDA 12.8+, so one CUDA 13 wheel serves A100 and B200.
+  Keep `sdpa` as the per-machine fallback, and record whichever you used: the
+  backend is part of a run's identity under the hardware policy, so an
+  `sdpa` run and a `flash_attention_2` run are not comparable.
 - **bitsandbytes 8-bit optimizers** may lag on `sm_100`. It doesn't matter there —
   B200's 180 GB makes plain fp32 AdamW affordable. Keep 8-bit for the A100.
 
@@ -132,19 +133,19 @@ uv pip install "transformers>=4.57.0" accelerate peft datasets \
 # Qwen-VL image preprocessing helpers
 uv pip install qwen-vl-utils
 
-# FlashAttention: OPTIONAL. Start without it.
-# attn_implementation="sdpa" works on every architecture here, needs no wheel
-# hunting, and costs ~15%. Get the pipeline green first, then consider adding
-# flash-attn as a speedup — only with a wheel matching your exact torch/CUDA
-# pair, or a source build (uv pip install flash-attn --no-build-isolation).
+# FlashAttention-2 — the project default. The wheel must match the torch build
+# exactly, so resolve it rather than guessing a URL:
 #
-# A prebuilt +cu124torch2.5 wheel will NOT import against the torch above.
-# If one is already installed from an earlier attempt, remove it:
-#   uv pip uninstall flash-attn
+#   uv pip uninstall flash-attn          # drop any earlier mismatched wheel
+#   python scripts/install_flash_attn.py --install
+#
+# That script reads the installed torch/CUDA/Python, finds the matching prebuilt
+# wheel, installs it, and then launches a kernel to prove it works on this GPU.
+# If no wheel exists for your combination it prints the source-build command with
+# the arch list already narrowed to the two GPUs in play.
 ```
 
-If you do install flash-attn, verify it loaded against the GPU rather than merely
-installing:
+`install_flash_attn.py --install` runs this check itself. To repeat it later:
 
 ```bash
 python - <<'PYCHK'
@@ -155,8 +156,9 @@ print("flash-attn", flash_attn.__version__, "->", tuple(flash_attn_func(q, q, q)
 PYCHK
 ```
 
-Then pass `--attn flash_attention_2` to `scripts/smoke_test.py` (§6) to confirm the
-model actually loads with it; the script defaults to `sdpa`.
+`scripts/smoke_test.py` (§6) then loads the model with
+`attn_implementation="flash_attention_2"` and fails loudly if the backend is
+unusable. Pass `--attn sdpa` to fall back on a machine where no wheel matches.
 
 <details>
 <summary>conda equivalent</summary>

@@ -59,11 +59,12 @@ def render_span(text: str, height: int = 32, pad: int = 6) -> Image.Image:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", required=True)
-    ap.add_argument("--attn", default="sdpa",
-                    help='"sdpa" (default: works on every architecture, no wheel '
-                         'matching) or "flash_attention_2" if a matching wheel is '
-                         'installed. Whichever you use becomes part of the run\'s '
-                         'identity under the hardware policy in docs/GATES.md.')
+    ap.add_argument("--attn", default="flash_attention_2",
+                    help='Attention backend. Default flash_attention_2 — resolve a '
+                         'matching wheel with scripts/install_flash_attn.py. Pass '
+                         '"sdpa" to fall back where no wheel matches. Whichever you '
+                         'use is part of the run\'s identity under the hardware '
+                         'policy in docs/GATES.md, so record it.')
     ap.add_argument("--batch", type=int, default=8)
     args = ap.parse_args()
 
