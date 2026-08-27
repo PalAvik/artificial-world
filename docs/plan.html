@@ -1,0 +1,1056 @@
+<title>FreeFlow</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+
+<style>
+:root {
+  --paper:   #F2F5F5;
+  --surface: #FFFFFF;
+  --sunken:  #E8EDED;
+  --ink:     #142023;
+  --muted:   #566A6E;
+  --faint:   #7E9296;
+  --rule:    #D5DEDE;
+  --rule-strong: #B9C6C6;
+  --mode-t:  #0C6D70;
+  --mode-i:  #9A5417;
+  --mode-t-wash: #E0EFEF;
+  --mode-i-wash: #F5E9DD;
+  --fused:   #4C6067;
+  --warn:    #8C3A2E;
+  --warn-wash: #F6E6E2;
+
+  --f-display: "Spectral", Georgia, "Times New Roman", serif;
+  --f-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --measure: 68ch;
+  --wide: 940px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper:   #0F1718;
+    --surface: #172122;
+    --sunken:  #1C2829;
+    --ink:     #E5EDEC;
+    --muted:   #98AAAC;
+    --faint:   #7A8D90;
+    --rule:    #2A3839;
+    --rule-strong: #3B4C4E;
+    --mode-t:  #55C8C4;
+    --mode-i:  #DE9950;
+    --mode-t-wash: #15302F;
+    --mode-i-wash: #2E2418;
+    --fused:   #9BAEB1;
+    --warn:    #E08A78;
+    --warn-wash: #2E1D1A;
+  }
+}
+
+:root[data-theme="dark"] {
+  --paper:   #0F1718;
+  --surface: #172122;
+  --sunken:  #1C2829;
+  --ink:     #E5EDEC;
+  --muted:   #98AAAC;
+  --faint:   #7A8D90;
+  --rule:    #2A3839;
+  --rule-strong: #3B4C4E;
+  --mode-t:  #55C8C4;
+  --mode-i:  #DE9950;
+  --mode-t-wash: #15302F;
+  --mode-i-wash: #2E2418;
+  --fused:   #9BAEB1;
+  --warn:    #E08A78;
+  --warn-wash: #2E1D1A;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--f-body);
+  font-size: 16.5px;
+  line-height: 1.62;
+  -webkit-font-smoothing: antialiased;
+}
+
+.page {
+  max-width: var(--wide);
+  margin: 0 auto;
+  padding: 0 28px 120px;
+}
+
+.col { max-width: var(--measure); }
+
+/* ---------- masthead ---------- */
+
+.masthead {
+  padding: 84px 0 40px;
+  border-bottom: 1px solid var(--rule);
+  margin-bottom: 8px;
+}
+
+.eyebrow {
+  font-family: var(--f-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--faint);
+  margin: 0 0 22px;
+}
+
+h1 {
+  font-family: var(--f-display);
+  font-weight: 600;
+  font-size: clamp(42px, 7vw, 68px);
+  line-height: 1.02;
+  letter-spacing: -0.02em;
+  margin: 0 0 4px;
+  text-wrap: balance;
+}
+
+.subtitle {
+  font-family: var(--f-display);
+  font-style: italic;
+  font-weight: 400;
+  font-size: clamp(20px, 2.6vw, 25px);
+  line-height: 1.34;
+  color: var(--muted);
+  margin: 0 0 34px;
+  max-width: 30ch;
+  text-wrap: balance;
+}
+
+.meta-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 40px;
+  border-top: 1px solid var(--rule);
+  padding-top: 20px;
+}
+.meta-strip div { display: flex; flex-direction: column; gap: 3px; }
+.meta-strip dt {
+  font-family: var(--f-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.meta-strip dd {
+  margin: 0;
+  font-size: 14.5px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- sections ---------- */
+
+section { padding-top: 62px; }
+
+.sec-head {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  margin-bottom: 26px;
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 12px;
+}
+.sec-num {
+  font-family: var(--f-mono);
+  font-size: 12px;
+  color: var(--faint);
+  letter-spacing: 0.08em;
+  flex: none;
+}
+h2 {
+  font-family: var(--f-display);
+  font-weight: 500;
+  font-size: clamp(26px, 3.4vw, 33px);
+  line-height: 1.16;
+  letter-spacing: -0.012em;
+  margin: 0;
+  text-wrap: balance;
+}
+
+h3 {
+  font-family: var(--f-body);
+  font-weight: 600;
+  font-size: 16px;
+  letter-spacing: -0.005em;
+  margin: 36px 0 10px;
+}
+
+p { margin: 0 0 17px; }
+p.lead { font-size: 18.5px; line-height: 1.58; color: var(--muted); }
+
+a { color: var(--mode-t); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+a:focus-visible, summary:focus-visible {
+  outline: 2px solid var(--mode-t);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+strong { font-weight: 600; }
+em { font-style: italic; }
+
+code, .mono {
+  font-family: var(--f-mono);
+  font-size: 0.885em;
+  background: var(--sunken);
+  padding: 0.1em 0.34em;
+  border-radius: 3px;
+}
+
+ul, ol { margin: 0 0 17px; padding-left: 22px; }
+li { margin-bottom: 8px; }
+li::marker { color: var(--faint); }
+
+/* ---------- modality coding ---------- */
+
+.t-tok { color: var(--mode-t); font-weight: 600; }
+.i-tok { color: var(--mode-i); font-weight: 600; }
+
+/* ---------- definition callout ---------- */
+
+.definition {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--fused);
+  padding: 24px 26px;
+  margin: 30px 0 24px;
+  max-width: var(--measure);
+}
+.definition .label {
+  font-family: var(--f-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--faint);
+  display: block;
+  margin-bottom: 12px;
+}
+.definition p {
+  font-family: var(--f-display);
+  font-size: 19px;
+  line-height: 1.5;
+  margin: 0;
+}
+.definition p + p { margin-top: 12px; font-size: 16px; font-family: var(--f-body); color: var(--muted); }
+
+/* ---------- problem list ---------- */
+
+.problems {
+  display: grid;
+  gap: 1px;
+  background: var(--rule);
+  border: 1px solid var(--rule);
+  margin: 28px 0;
+  max-width: var(--measure);
+}
+.problems > div { background: var(--surface); padding: 20px 22px; }
+.problems h4 {
+  margin: 0 0 7px;
+  font-family: var(--f-body);
+  font-size: 15px;
+  font-weight: 600;
+}
+.problems p { margin: 0; font-size: 15px; line-height: 1.55; color: var(--muted); }
+.problems p + p { margin-top: 9px; }
+.problems .consequence { color: var(--ink); }
+.problems .consequence b {
+  font-family: var(--f-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--faint);
+  font-weight: 400;
+  margin-right: 7px;
+}
+
+/* ---------- figures ---------- */
+
+figure {
+  margin: 40px 0;
+  max-width: var(--wide);
+}
+figure svg {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  color: var(--ink);
+}
+.fig-frame {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  padding: 26px 24px 20px;
+  overflow-x: auto;
+}
+.fig-frame svg { min-width: 520px; }
+figcaption {
+  margin-top: 14px;
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: var(--muted);
+  max-width: 72ch;
+}
+figcaption b {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* ---------- tier cards ---------- */
+
+.tiers {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 18px;
+  margin: 30px 0;
+}
+.tier {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  padding: 22px 22px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+.tier-tag {
+  font-family: var(--f-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.tier h3 {
+  margin: 0;
+  font-family: var(--f-display);
+  font-weight: 500;
+  font-size: 21px;
+  line-height: 1.2;
+}
+.tier p { margin: 0; font-size: 14.5px; line-height: 1.55; color: var(--muted); }
+.tier .example {
+  font-family: var(--f-mono);
+  font-size: 13px;
+  background: var(--sunken);
+  padding: 9px 11px;
+  line-height: 1.5;
+}
+.tier .verdict {
+  margin-top: auto;
+  padding-top: 13px;
+  border-top: 1px solid var(--rule);
+  font-size: 14px;
+  color: var(--ink);
+}
+.tier--centre { border-color: var(--rule-strong); box-shadow: inset 3px 0 0 var(--mode-i); }
+
+/* ---------- formula ---------- */
+
+.formula {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  padding: 26px 24px;
+  margin: 28px 0;
+  max-width: var(--measure);
+  text-align: center;
+  font-family: var(--f-mono);
+  font-size: 14px;
+  overflow-x: auto;
+}
+.formula .frac {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  vertical-align: middle;
+  text-align: center;
+}
+.formula .frac .num { padding: 0 14px 6px; border-bottom: 1px solid var(--rule-strong); }
+.formula .frac .den { padding: 0 14px; }
+.formula .lhs { margin-right: 14px; color: var(--muted); }
+
+.readings {
+  display: grid;
+  gap: 10px;
+  max-width: var(--measure);
+  margin: 22px 0 0;
+}
+.reading {
+  display: grid;
+  grid-template-columns: 92px 1fr;
+  gap: 16px;
+  align-items: baseline;
+  padding: 11px 0;
+  border-top: 1px solid var(--rule);
+  font-size: 15px;
+}
+.reading .val {
+  font-family: var(--f-mono);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.reading.good .val { color: var(--mode-t); }
+.reading.bad .val { color: var(--mode-i); }
+
+/* ---------- hypotheses ---------- */
+
+.hyps { margin: 26px 0; max-width: var(--measure); }
+.hyp {
+  display: grid;
+  grid-template-columns: 58px 1fr;
+  gap: 18px;
+  padding: 15px 0;
+  border-top: 1px solid var(--rule);
+}
+.hyp:last-child { border-bottom: 1px solid var(--rule); }
+.hyp .id {
+  font-family: var(--f-mono);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--mode-t);
+  padding-top: 2px;
+}
+.hyp .body { font-size: 15.5px; line-height: 1.55; }
+.hyp .body b { display: block; margin-bottom: 3px; }
+
+.kill {
+  background: var(--warn-wash);
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--warn);
+  padding: 22px 24px;
+  margin: 30px 0;
+  max-width: var(--measure);
+}
+.kill .label {
+  font-family: var(--f-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--warn);
+  display: block;
+  margin-bottom: 13px;
+}
+.kill ul { margin: 0; padding-left: 20px; }
+.kill li { font-size: 15px; line-height: 1.55; }
+.kill li:last-child { margin-bottom: 0; }
+
+/* ---------- objective ---------- */
+
+.objective {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  padding: 0;
+  margin: 28px 0;
+  max-width: var(--measure);
+}
+.obj-row {
+  display: grid;
+  grid-template-columns: 34px 116px 1fr;
+  gap: 14px;
+  align-items: baseline;
+  padding: 13px 22px;
+  border-bottom: 1px solid var(--rule);
+  font-size: 14.5px;
+}
+.obj-row:last-child { border-bottom: 0; }
+.obj-row .op { font-family: var(--f-mono); color: var(--faint); font-size: 13px; }
+.obj-row .term { font-family: var(--f-mono); font-size: 13.5px; font-weight: 500; }
+.obj-row .gloss { color: var(--muted); line-height: 1.5; }
+.obj-row--anchor { background: var(--mode-i-wash); }
+.obj-row--anchor .term { color: var(--mode-i); }
+
+/* ---------- table ---------- */
+
+.table-wrap { overflow-x: auto; margin: 28px 0; max-width: var(--measure); }
+table { border-collapse: collapse; width: 100%; min-width: 460px; font-size: 14.5px; }
+th, td { text-align: left; padding: 12px 16px 12px 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th {
+  font-family: var(--f-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--faint);
+  font-weight: 400;
+  border-bottom-color: var(--rule-strong);
+}
+td:first-child { font-family: var(--f-mono); font-size: 13px; padding-right: 26px; }
+tr:last-child td { border-bottom: 0; }
+
+/* ---------- phases ---------- */
+
+.phases { margin: 30px 0; max-width: var(--measure); }
+.phase {
+  display: grid;
+  grid-template-columns: 74px 1fr;
+  gap: 20px;
+  padding: 22px 0;
+  border-top: 1px solid var(--rule);
+}
+.phase:last-child { border-bottom: 1px solid var(--rule); }
+.phase .marker { display: flex; flex-direction: column; gap: 4px; }
+.phase .pnum {
+  font-family: var(--f-display);
+  font-size: 30px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--rule-strong);
+  font-variant-numeric: tabular-nums;
+}
+.phase .weeks {
+  font-family: var(--f-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.phase h3 { margin: 0 0 7px; font-size: 17px; }
+.phase p { margin: 0 0 9px; font-size: 15px; color: var(--muted); line-height: 1.55; }
+.phase .exit {
+  font-size: 14.5px;
+  color: var(--ink);
+  padding-top: 9px;
+  border-top: 1px dotted var(--rule-strong);
+}
+.phase .exit b {
+  font-family: var(--f-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--faint);
+  font-weight: 400;
+  margin-right: 8px;
+}
+.phase--gate .pnum { color: var(--mode-t); }
+
+/* ---------- questions ---------- */
+
+.questions { margin: 28px 0 0; max-width: var(--measure); counter-reset: q; }
+.question {
+  padding: 18px 0;
+  border-top: 1px solid var(--rule);
+  display: grid;
+  grid-template-columns: 30px 1fr;
+  gap: 14px;
+}
+.question:last-child { border-bottom: 1px solid var(--rule); }
+.question::before {
+  counter-increment: q;
+  content: counter(q);
+  font-family: var(--f-mono);
+  font-size: 12px;
+  color: var(--faint);
+  padding-top: 4px;
+}
+.question h3 { margin: 0 0 5px; font-size: 15.5px; }
+.question p { margin: 0; font-size: 15px; color: var(--muted); }
+
+footer {
+  margin-top: 80px;
+  padding-top: 22px;
+  border-top: 1px solid var(--rule);
+  font-family: var(--f-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.06em;
+  color: var(--faint);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 26px;
+}
+
+/* svg marks inherit the theme tokens */
+.sv-t-fill { fill: var(--mode-t); }
+.sv-i-fill { fill: var(--mode-i); }
+.sv-t-stroke { stroke: var(--mode-t); }
+.sv-i-stroke { stroke: var(--mode-i); }
+.sv-t-box { fill: var(--mode-t); fill-opacity: 0.12; stroke: var(--mode-t); }
+.sv-i-box { fill: var(--mode-i); fill-opacity: 0.12; stroke: var(--mode-i); }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}
+</style>
+
+<div class="page">
+
+  <header class="masthead">
+    <p class="eyebrow">Research plan · v0.1 · August 2026</p>
+    <h1>FreeFlow</h1>
+    <p class="subtitle">Meaning carried by content, not by modality.</p>
+    <dl class="meta-strip">
+      <div><dt>Base model</dt><dd>~2B VLM</dd></div>
+      <div><dt>Horizon</dt><dd>10 weeks</dd></div>
+      <div><dt>First gate</dt><dd>Week 3</dd></div>
+      <div><dt>Repo</dt><dd>artificial-world</dd></div>
+    </dl>
+  </header>
+
+  <section>
+    <div class="col">
+      <p class="lead">The goal: a model where a span of a sequence can be expressed as text tokens or as image tokens and the model behaves the same either way — same next-token distribution, same downstream answer, enough information retained to regenerate the span in either direction.</p>
+      <p>This plan does three things to that idea. It replaces "equivalence" with a quantity you can actually measure. It solves the abstract-word problem constructively — you don't need a picture <em>of</em> "the", you need a picture of the <em>word</em> "the". And it puts measurement before training, so that a cheap three-week study can kill the project before it eats ten weeks.</p>
+      <p>The figure the whole project is aiming at is the <strong>invariance–informativeness frontier</strong>. Cross-modal invariance is trivially achievable by throwing information away. The contribution is showing where current VLMs sit on that trade-off, and moving it.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">01</span>
+      <h2>What "equivalence" can and cannot mean</h2>
+    </div>
+    <div class="col">
+      <p>The original framing — replace a text token with the corresponding image tokens and the model understands it the same — has three problems. Each has to be designed around rather than ignored.</p>
+    </div>
+
+    <div class="problems">
+      <div>
+        <h4>There is no bijection</h4>
+        <p>One word maps to <em>N</em> image patches, with <em>N</em> varying by resolution and content. There is no token-for-token swap.</p>
+        <p class="consequence"><b>Consequence</b>Substitution operates on <strong>spans</strong>, and equivalence is asserted at the <strong>merge position</strong> — the first position after the span, where the model has had to integrate it. The span positions themselves <em>should</em> differ; forcing them to match is a modeling error, and one we ablate explicitly.</p>
+      </div>
+      <div>
+        <h4>There is no canonical rendering</h4>
+        <p>"Dog" has many images. "From" has none in the referential sense.</p>
+        <p class="consequence"><b>Consequence</b>Three substitution tiers with different relations and different success criteria, rather than one relation pretending to cover the whole vocabulary.</p>
+      </div>
+      <div>
+        <h4>Reconstruction is asymmetric</h4>
+        <p><span class="mono">text → image → text</span> can be near-lossless: render glyphs, read them back. <span class="mono">image → text → image</span> cannot be. A 448×448 image carries far more bits than any caption of it — demanding accurate reconstruction there is asking for a violation of the source coding theorem.</p>
+        <p class="consequence"><b>Consequence</b>Reconstruction is never a single number. It is a <strong>rate–distortion curve</strong>, and distortion is measured task-conditionally — <em>does the reconstruction answer the same questions?</em> — not pixel-wise. A semantically identical but pixel-different dog has succeeded at the thing we care about.</p>
+      </div>
+    </div>
+
+    <div class="definition">
+      <span class="label">The reframed goal</span>
+      <p>For a task distribution <em>T</em> and a substitution operator <em>σ</em> that re-expresses a span in another modality, the model's behaviour on <em>σ(x)</em> should differ from its behaviour on <em>x</em> by no more than the model's own variation across two same-modality paraphrases of that span.</p>
+      <p>That last clause is the load-bearing one. It converts an unbounded "how close is close enough" into a ratio with a natural target of 1.0.</p>
+    </div>
+
+    <figure>
+      <div class="fig-frame">
+        <svg viewBox="0 0 700 300" role="img" aria-label="Two views of the same context, one with the span as text tokens and one as image patches, compared not on the span but at the merge position immediately after it.">
+          <defs>
+            <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <polygon points="0,1.5 10,5 0,8.5" fill="currentColor"/>
+            </marker>
+          </defs>
+
+          <!-- span bracket -->
+          <rect x="178" y="30" width="116" height="196" fill="none" stroke="currentColor" stroke-width="1" stroke-dasharray="4 4" opacity="0.42"/>
+          <text x="236" y="246" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity="0.65">span σ</text>
+          <text x="236" y="262" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity="0.65">differs by construction</text>
+
+          <!-- merge connector -->
+          <line x1="321" y1="90" x2="321" y2="164" stroke="currentColor" stroke-width="1" stroke-dasharray="3 3" opacity="0.5"/>
+
+          <!-- row T -->
+          <text x="56" y="72" text-anchor="end" font-family="IBM Plex Mono, monospace" font-size="12" class="sv-t-fill">V_T</text>
+          <rect x="64" y="48" width="54" height="36" fill="none" stroke="currentColor" stroke-width="1" opacity="0.5"/>
+          <text x="91" y="71" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity="0.7">a cat</text>
+          <rect x="124" y="48" width="54" height="36" fill="none" stroke="currentColor" stroke-width="1" opacity="0.5"/>
+          <text x="151" y="71" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity="0.7">sat</text>
+          <rect x="184" y="48" width="104" height="36" class="sv-t-box" stroke-width="1.5"/>
+          <text x="236" y="71" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="12" class="sv-t-fill" font-weight="500">"on the"</text>
+          <rect x="294" y="48" width="54" height="36" fill="none" stroke="currentColor" stroke-width="2"/>
+          <text x="321" y="71" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor">mat</text>
+
+          <!-- row I -->
+          <text x="56" y="192" text-anchor="end" font-family="IBM Plex Mono, monospace" font-size="12" class="sv-i-fill">V_I</text>
+          <rect x="64" y="168" width="54" height="36" fill="none" stroke="currentColor" stroke-width="1" opacity="0.5"/>
+          <text x="91" y="191" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity="0.7">a cat</text>
+          <rect x="124" y="168" width="54" height="36" fill="none" stroke="currentColor" stroke-width="1" opacity="0.5"/>
+          <text x="151" y="191" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity="0.7">sat</text>
+          <rect x="184" y="168" width="104" height="36" class="sv-i-box" stroke-width="1.5"/>
+          <rect x="191" y="176" width="26" height="20" class="sv-i-fill" fill-opacity="0.32"/>
+          <rect x="223" y="176" width="26" height="20" class="sv-i-fill" fill-opacity="0.52"/>
+          <rect x="255" y="176" width="26" height="20" class="sv-i-fill" fill-opacity="0.32"/>
+          <rect x="294" y="168" width="54" height="36" fill="none" stroke="currentColor" stroke-width="2"/>
+          <text x="321" y="191" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor">mat</text>
+
+          <text x="321" y="132" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor">merge position</text>
+
+          <!-- arrows to comparison -->
+          <path d="M 352 66 C 400 66 420 100 456 112" fill="none" stroke="currentColor" stroke-width="1.4" marker-end="url(#ah)" opacity="0.75"/>
+          <path d="M 352 186 C 400 186 420 152 456 140" fill="none" stroke="currentColor" stroke-width="1.4" marker-end="url(#ah)" opacity="0.75"/>
+
+          <rect x="466" y="86" width="204" height="80" fill="none" stroke="currentColor" stroke-width="1.5"/>
+          <text x="568" y="112" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="12.5" fill="currentColor" font-weight="600">compare here</text>
+          <text x="568" y="132" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity="0.8">JSD( p_T ‖ p_I )</text>
+          <text x="568" y="150" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity="0.8">offset-free d( h_T , h_I )</text>
+        </svg>
+      </div>
+      <figcaption><b>Equivalence is asserted after the span, not on it.</b> Both views carry the same content; only the span's surface form differs. Because the two spans have different token counts and different surface form, matching them directly is the wrong target — the objective compares the two runs at the first position where the model has had to integrate the span into its running state.</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">02</span>
+      <h2>Three tiers of substitution</h2>
+    </div>
+    <div class="col">
+      <p>Three different relations, three different success criteria. Conflating them is the main way this project produces uninterpretable numbers.</p>
+    </div>
+
+    <div class="tiers">
+      <div class="tier">
+        <span class="tier-tag">Tier A · referential</span>
+        <h3>Concrete</h3>
+        <p class="example"><span class="t-tok">"a dog"</span> ⇄ <span class="i-tok">▨ region crop</span></p>
+        <p>Bridged by grounding. Natively annotated in Flickr30k Entities and Visual Genome region descriptions — phrase↔box pairs, no synthesis needed.</p>
+        <p>Invariance should be achievable but lossy: the image specifies a particular dog, the phrase specifies a class. Condition on questions answerable from the phrase alone.</p>
+        <p class="verdict">Existing VLMs are already partly aligned here. This is the <strong>control</strong>, not the contribution.</p>
+      </div>
+
+      <div class="tier tier--centre">
+        <span class="tier-tag">Tier B · orthographic</span>
+        <h3>Renderable</h3>
+        <p class="example"><span class="t-tok">"the"</span> ⇄ <span class="i-tok">▨ glyphs of "the"</span></p>
+        <p>Bridged by typography. Works for every token in the vocabulary — function words, punctuation, subword fragments. Synthesized on demand, unlimited, with font, size, background and noise as ablation axes.</p>
+        <p>Information-preserving in principle: the pixels contain the string exactly. Any behavioural gap is attributable purely to internal routing — the OCR pathway landing somewhere the embedding table doesn't.</p>
+        <p class="verdict"><strong>The centre of the project.</strong> No semantic ambiguity, no annotation noise, no grounding error. Strong prior that current VLMs fail here badly — a result worth reporting on its own.</p>
+      </div>
+
+      <div class="tier">
+        <span class="tier-tag">Tier C · relational</span>
+        <h3>Structural</h3>
+        <p class="example"><span class="t-tok">"on top of"</span> ⇄ <span class="i-tok">▨ spatial arrangement</span></p>
+        <p>Bridged by synthetic scenes with programmatic ground truth (CLEVR-style), plus GQA's relation annotations.</p>
+        <p>Hardest tier, likely the largest gaps.</p>
+        <p class="verdict">If entities transfer across modalities but relations don't, that asymmetry is the <strong>strongest world-model claim in the paper</strong> — it says multimodal pretraining fuses nouns and not structure.</p>
+      </div>
+    </div>
+
+    <div class="col">
+      <p>Tier B is where the abstract-word problem dissolves. The question stops being "what does <em>from</em> look like" — unanswerable — and becomes "does the model treat rendered-<code>the</code> the way it treats token-<code>the</code>", which is a clean, controlled, unlimited-data experiment. A sub-study falls straight out of it: does the gap scale with word frequency, concreteness, or length? A gap that vanishes for concrete nouns but persists for function words would say something genuinely new about what multimodal pretraining does and does not fuse.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">03</span>
+      <h2>The metric suite, built first</h2>
+    </div>
+    <div class="col">
+      <p>Nothing else gets written until these exist. Notation: context <code>C</code> containing span <code>s</code>; <code>V_T</code> is <code>C</code> with <code>s</code> as text tokens, <code>V_I</code> is <code>C</code> with <code>s</code> as image tokens.</p>
+
+      <h3>Distributional</h3>
+      <p>Symmetric Jensen–Shannon divergence between the two views' next-token distributions, teacher-forced over a shared continuation. JSD rather than KL: symmetric, so neither view is privileged, and bounded, so items are comparable. Report the full distribution — the tail matters more than the mean.</p>
+
+      <h3>Geometric, with the offset factored out</h3>
+      <p>At the merge position, per layer, compare <code>h_T</code> and <code>h_I</code> by raw cosine distance and by <strong>offset-free distance</strong> — the same, after subtracting the per-modality batch mean. A constant per-modality translation is harmless if the downstream readout is affine. Reporting only the raw distance conflates a benign offset with genuine representational divergence, which is a recurring flaw in how the modality gap gets reported.</p>
+
+      <h3>Normalized MSG — the headline number</h3>
+      <p>A raw distance is uninterpretable. Is 0.3 large? Normalize by the model's own within-modality variation:</p>
+    </div>
+
+    <div class="formula">
+      <span class="lhs">normalized MSG =</span>
+      <span class="frac">
+        <span class="num">d( h(V_T) , h(V_I) )</span>
+        <span class="den">½ [ d(h(V_T), h(V_T′)) + d(h(V_I), h(V_I′)) ]</span>
+      </span>
+    </div>
+
+    <div class="col">
+      <p><code>V_T′</code> is a text paraphrase of the span; <code>V_I′</code> is a different image of the same content — a different photo for Tier A, a different font or background for Tier B.</p>
+      <div class="readings">
+        <div class="reading good">
+          <span class="val">MSG ≈ 1</span>
+          <span>Crossing modalities costs no more than rephrasing. This is the target, and it is the operational definition of "free-flowing".</span>
+        </div>
+        <div class="reading bad">
+          <span class="val">MSG ≫ 1</span>
+          <span>Modality dominates content.</span>
+        </div>
+      </div>
+      <p style="margin-top:22px">The denominator is what makes the suite credible — which makes the paraphrase and re-render machinery a Phase 0 dependency, not an afterthought.</p>
+
+      <h3>The informativeness probe</h3>
+      <p>Invariance is trivially maximized by mapping everything to a constant. Guard against it: train a linear probe on <code>h</code> at the merge position to recover the identity of the substituted span, and track probe accuracy alongside MSG at every checkpoint.</p>
+    </div>
+
+    <figure>
+      <div class="fig-frame">
+        <svg viewBox="0 0 660 400" role="img" aria-label="Invariance plotted against informativeness. The current VLM sits at low invariance and high informativeness; naive invariance training slides down the existing frontier, discarding content; the goal is to push the frontier outward.">
+          <defs>
+            <marker id="ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <polygon points="0,1.5 10,5 0,8.5" fill="currentColor"/>
+            </marker>
+            <marker id="ah2i" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <polygon points="0,1.5 10,5 0,8.5" class="sv-i-fill"/>
+            </marker>
+            <marker id="ah2t" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <polygon points="0,1.5 10,5 0,8.5" class="sv-t-fill"/>
+            </marker>
+          </defs>
+
+          <!-- axes -->
+          <line x1="92" y1="40" x2="92" y2="330" stroke="currentColor" stroke-width="1.5"/>
+          <line x1="92" y1="330" x2="616" y2="330" stroke="currentColor" stroke-width="1.5"/>
+          <text x="354" y="366" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11.5" fill="currentColor" opacity="0.75">invariance  ( 1 / normalized MSG )  →</text>
+          <text x="-185" y="66" text-anchor="middle" transform="rotate(-90)" font-family="IBM Plex Mono, monospace" font-size="11.5" fill="currentColor" opacity="0.75">informativeness ( probe acc. )  →</text>
+
+          <!-- current frontier -->
+          <path d="M 130 68 C 240 112 300 160 360 218 C 410 266 460 300 520 318" fill="none" stroke="currentColor" stroke-width="1.6" opacity="0.55"/>
+          <text x="536" y="316" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity="0.7">today's</text>
+          <text x="536" y="331" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity="0.7">frontier</text>
+
+          <!-- goal frontier -->
+          <path d="M 138 52 C 280 76 380 108 460 152 C 520 186 570 220 610 250" fill="none" class="sv-t-stroke" stroke-width="1.8" stroke-dasharray="6 5"/>
+          <text x="470" y="118" font-family="IBM Plex Mono, monospace" font-size="11" class="sv-t-fill">moved frontier</text>
+
+          <!-- current model point -->
+          <circle cx="176" cy="96" r="6" fill="currentColor"/>
+          <text x="192" y="92" font-family="IBM Plex Sans, sans-serif" font-size="12.5" fill="currentColor" font-weight="600">off-the-shelf VLM</text>
+          <text x="192" y="109" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity="0.7">MSG ≫ 1, content intact</text>
+
+          <!-- collapse arrow -->
+          <path d="M 190 116 C 280 190 360 260 442 300" fill="none" class="sv-i-stroke" stroke-width="1.8" marker-end="url(#ah2i)"/>
+          <text x="250" y="252" font-family="IBM Plex Sans, sans-serif" font-size="12.5" class="sv-i-fill" font-weight="600">collapse</text>
+          <text x="250" y="269" font-family="IBM Plex Mono, monospace" font-size="11" class="sv-i-fill" opacity="0.9">invariance by discarding</text>
+          <text x="250" y="284" font-family="IBM Plex Mono, monospace" font-size="11" class="sv-i-fill" opacity="0.9">content — no result</text>
+
+          <!-- goal arrow -->
+          <path d="M 196 88 C 260 74 320 74 392 88" fill="none" class="sv-t-stroke" stroke-width="1.8" marker-end="url(#ah2t)"/>
+          <circle cx="400" cy="90" r="6" class="sv-t-fill"/>
+          <text x="414" y="80" font-family="IBM Plex Sans, sans-serif" font-size="12.5" class="sv-t-fill" font-weight="600">goal</text>
+          <text x="414" y="97" font-family="IBM Plex Mono, monospace" font-size="11" class="sv-t-fill" opacity="0.9">MSG → 1, content intact</text>
+        </svg>
+      </div>
+      <figcaption><b>The trade-off that decides whether the project has a result.</b> Any method can drive the substitution gap down by making the representation carry less. The two arrows are the difference between a result and an artifact: sliding along the existing frontier proves nothing, moving the frontier outward is the paper. Both coordinates get logged at every checkpoint, so the distinction is visible during training rather than after it.</figcaption>
+    </figure>
+
+    <div class="col">
+      <h3>Cycle consistency</h3>
+      <p><span class="mono">T → I → T</span>: render the span, feed it, ask the model to recover the string. Exact match and character error rate. Near-lossless is the expectation; failure here is a pure routing failure.</p>
+      <p><span class="mono">I → T → I</span>: encode the span to text, regenerate an image from it, compare. Not with pixel metrics — with (a) embedding similarity in a third-party encoder held out from training, and (b) a <strong>VQA agreement score</strong>: pose a fixed question set to the original and the reconstruction, measure answer agreement. Both directions reported as rate–distortion curves by sweeping the intermediate budget.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">04</span>
+      <h2>Hypotheses, and what would kill them</h2>
+    </div>
+
+    <div class="hyps">
+      <div class="hyp">
+        <span class="id">H1</span>
+        <span class="body"><b>The gap exists.</b> In an off-the-shelf 2B VLM, normalized MSG ≫ 1 across all three tiers — a cross-modal restatement costs far more than a within-modality paraphrase.</span>
+      </div>
+      <div class="hyp">
+        <span class="id">H2</span>
+        <span class="body"><b>The gap is structured, not uniform.</b> Ordered Tier A &lt; Tier B &lt; Tier C, and within Tier B correlated with abstractness and function-word status rather than string length.</span>
+      </div>
+      <div class="hyp">
+        <span class="id">H3</span>
+        <span class="body"><b>Much of it is a removable offset.</b> A substantial fraction of the geometric gap is a constant per-modality mean offset the readout could ignore; the residual is far smaller. If this holds, the problem is much more tractable than the modality-gap literature suggests.</span>
+      </div>
+      <div class="hyp">
+        <span class="id">H4</span>
+        <span class="body"><b>It is trainable.</b> The ISO objective drives normalized MSG toward 1.0 without degrading standard VLM benchmarks beyond a small, stated margin.</span>
+      </div>
+      <div class="hyp">
+        <span class="id">H5</span>
+        <span class="body"><b>The real claim.</b> Training for substitution invariance <em>improves</em> compositional and relational generalization — it buys world-model quality, not just a tidier representation. Tested on held-out relational composition, never on the training tasks.</span>
+      </div>
+    </div>
+
+    <div class="kill">
+      <span class="label">Kill criteria — written before any results exist</span>
+      <ul>
+        <li><strong>H1 fails</strong> (gap already ≈ 1 everywhere): the phenomenon doesn't exist at this scale. Pivot to the generation half, or to larger models where it may be scale-dependent.</li>
+        <li><strong>H3 fails badly</strong> and H4 shows invariance rising only as probe decodability falls: the objective is buying invariance by destroying information. Stop and redesign around the generation loss as the primary anchor.</li>
+        <li><strong>H4 succeeds but H5 fails</strong>: a negative result, still publishable as a measurement paper. Write it as the measurement paper it is — don't oversell it as world-model progress.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">05</span>
+      <h2>The ISO objective</h2>
+    </div>
+    <div class="col">
+      <p>Invariant Substitution Objective — five terms, each of which has to justify its presence.</p>
+    </div>
+
+    <div class="objective">
+      <div class="obj-row">
+        <span class="op">L =</span>
+        <span class="term">L_LM</span>
+        <span class="gloss">Standard next-token loss on modality-mixed sequences.</span>
+      </div>
+      <div class="obj-row">
+        <span class="op">+ λ_d</span>
+        <span class="term">L_dist</span>
+        <span class="gloss">Symmetric JSD between the two views' next-token distributions, with <em>alternating stop-gradient</em> — each view teaches the other. A fixed text-teacher would bake in exactly the text-centrism we're trying to remove.</span>
+      </div>
+      <div class="obj-row">
+        <span class="op">+ λ_r</span>
+        <span class="term">L_repr</span>
+        <span class="gloss">Offset-free distance between merge-position hidden states. Applied only at merge positions and after — <em>never</em> on the span tokens themselves, which have different cardinality and should differ.</span>
+      </div>
+      <div class="obj-row">
+        <span class="op">+ λ_c</span>
+        <span class="term">L_cycle</span>
+        <span class="gloss">Regenerate the swapped span in the opposite modality.</span>
+      </div>
+      <div class="obj-row obj-row--anchor">
+        <span class="op">+ λ_g</span>
+        <span class="term">L_gen</span>
+        <span class="gloss"><strong>The anti-collapse anchor, and not optional.</strong> It is the structural reason the model cannot satisfy the invariance terms by discarding content. If Phase 3 slips, substitute a reconstruction proxy so the anchor exists from Phase 2 onward.</span>
+      </div>
+    </div>
+
+    <div class="col">
+      <p>Curriculum: Tier B first — clean, unlimited, information-preserving — then A, then C. LoRA before full fine-tuning, to establish cheaply that the objective does anything at all.</p>
+
+      <h3>Ablations that must run</h3>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th scope="col">Ablation</th><th scope="col">Question it answers</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>L_repr on span positions too</td><td>Is forcing span-level matching harmful, as the cardinality argument predicts?</td></tr>
+          <tr><td>drop L_gen</td><td>Does invariance collapse the representation without the anchor?</td></tr>
+          <tr><td>fixed teacher vs alternating</td><td>Does a privileged modality bake in text-centrism?</td></tr>
+          <tr><td>Tier B only vs all tiers</td><td>Does orthographic invariance transfer to referential?</td></tr>
+          <tr><td>render-augmentation only</td><td>Is plain data augmentation the whole effect?</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="col">
+      <p>That last row is the reviewer's first question and the most likely way this result gets deflated. Run it early, not at the end.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">06</span>
+      <h2>Phases</h2>
+    </div>
+
+    <div class="phases">
+      <div class="phase">
+        <span class="marker"><span class="pnum">0</span><span class="weeks">Week 1</span></span>
+        <div>
+          <h3>Instrument</h3>
+          <p>Substitution corpus builder: glyph renderer with controlled font, size, background and noise; span aligner for Flickr30k Entities and Visual Genome; paraphrase and re-render generators for the MSG denominator. CPU-only and testable without a GPU.</p>
+          <p class="exit"><b>Exit</b>Corpus builder produces all three tiers with paired views, unit-tested.</p>
+        </div>
+      </div>
+
+      <div class="phase phase--gate">
+        <span class="marker"><span class="pnum">1</span><span class="weeks">Weeks 2–3</span></span>
+        <div>
+          <h3>Measure</h3>
+          <p>Full metric suite against an off-the-shelf 2B VLM. Inference only — one H100 or A100 is enough. Tests H1 through H3.</p>
+          <p class="exit"><b>Exit</b>The modality-substitution-gap study, with per-tier and per-word-class breakdowns. <strong>Standalone workshop paper and the first real go/no-go.</strong></p>
+        </div>
+      </div>
+
+      <div class="phase">
+        <span class="marker"><span class="pnum">2</span><span class="weeks">Weeks 4–6</span></span>
+        <div>
+          <h3>Train for invariance</h3>
+          <p>ISO objective, LoRA then full fine-tune, understanding side only. Full ablation table. Frontier plot logged at every checkpoint.</p>
+          <p class="exit"><b>Exit</b>H4 answered; frontier plot with baseline and trained points.</p>
+        </div>
+      </div>
+
+      <div class="phase">
+        <span class="marker"><span class="pnum">3</span><span class="weeks">Weeks 7–10</span></span>
+        <div>
+          <h3>Close the cycle</h3>
+          <p>Add generation. Rate–distortion curves in both directions. Test H5 on held-out relational composition.</p>
+          <p class="exit"><b>Exit</b>Full paper draft.</p>
+        </div>
+      </div>
+
+      <div class="phase">
+        <span class="marker"><span class="pnum">4</span><span class="weeks">After</span></span>
+        <div>
+          <h3>Scale and write</h3>
+          <p>One scale point up to show the trend, or a second model family to show it isn't Qwen-specific. Reviewers will ask for one of the two.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">07</span>
+      <h2>Base model, and one correction</h2>
+    </div>
+    <div class="col">
+      <p><code>Qwen/Qwen3.5-2B</code> — released March 2026 — is a <strong>text-only</strong> LLM. It has no vision encoder, so it cannot host this experiment as written. The Qwen3.5 small line is 0.8B / 2B / 4B / 9B, all text.</p>
+      <ul>
+        <li><strong>Workhorse: <code>Qwen3-VL-2B</code>.</strong> Confirmed to exist, right size, native interleaved text/image context, and strong OCR — which matters a great deal for Tier B. Understanding-only, which is fine through Phase 2.</li>
+        <li><strong>Check first:</strong> whether the Qwen3.5-VL line ships a ≤4B variant. Sources conflict on whether Qwen3.5's vision capability is a separate VL series or folded into the main line, and this could not be resolved from the authoring container. If a small Qwen3.5-VL exists, prefer it and keep Qwen3-VL-2B as the generational control.</li>
+        <li><strong>Keep <code>Qwen3.5-2B</code> as the text-only ablation.</strong> Genuinely useful for isolating what the vision tower contributes versus what the LM already does with rendered text descriptions.</li>
+        <li><strong>Phase 3</strong> needs either a discrete visual tokenizer and decoder bolted onto the VLM, or a unified any-to-any base. Decide at the Phase 2/3 boundary with Phase 1 data in hand — don't pre-commit.</li>
+      </ul>
+
+      <h3>Risks</h3>
+      <ul>
+        <li><strong>Collapse.</strong> The dominant failure mode. Watched every checkpoint, not at the end.</li>
+        <li><strong>The augmentation deflation.</strong> "You just trained on rendered text." Pre-empted by the ablation table and by H5's held-out compositional test.</li>
+        <li><strong>Tier A annotation noise</strong> swamping the signal — grounding boxes are imprecise. Mitigated by leading with Tier B, where ground truth is exact by construction.</li>
+        <li><strong>OCR ceiling.</strong> If the base model can't reliably read rendered spans, Tier B measures OCR failure rather than representational geometry. <strong>Check this in week 1</strong> with a read-back accuracy test — it gates the entire Tier B design and costs almost nothing.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">08</span>
+      <h2>Open questions</h2>
+    </div>
+
+    <div class="questions">
+      <div class="question">
+        <div>
+          <h3>What hardware, and for how long?</h3>
+          <p>Phase 1 needs one GPU for inference. Phase 2 wants four to eight for a decent ablation sweep.</p>
+        </div>
+      </div>
+      <div class="question">
+        <div>
+          <h3>Bolt a decoder on, or switch bases at Phase 3?</h3>
+          <p>Best decided with Phase 1 data — but a standing preference changes what Phase 0 builds.</p>
+        </div>
+      </div>
+      <div class="question">
+        <div>
+          <h3>Which deadline?</h3>
+          <p>It determines whether Phase 1 ships as its own workshop paper or folds into the main submission.</p>
+        </div>
+      </div>
+      <div class="question">
+        <div>
+          <h3>Would you ship Phase 1 alone if H4 fails?</h3>
+          <p>Deciding yes now is what makes the kill criteria real rather than decorative.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <span>FreeFlow · research plan v0.1</span>
+    <span>branch: claude/multimodal-token-equivalence-h400oh</span>
+    <span>source of truth: PLAN.md</span>
+  </footer>
+
+</div>
