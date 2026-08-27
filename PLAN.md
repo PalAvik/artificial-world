@@ -313,28 +313,48 @@ deflated. Run it early, not at the end.
 
 ---
 
-## 7. Phases
+## 7. Phases (1 × A100 80GB, 10 weeks)
 
-**Phase 0 — Instrument (week 1).** Substitution corpus builder: glyph renderer with controlled
-font/size/background/noise; span aligner for Flickr30k Entities + Visual Genome; paraphrase
-and re-render generators for the MSG denominator. CPU-only, testable without a GPU.
-*Exit:* corpus builder produces all three tiers with paired views; unit-tested.
+Compute budget and per-run configs: `docs/COMPUTE.md`. Gate thresholds and drop rules:
+`docs/GATES.md`. Setup commands: `docs/ENVIRONMENT.md`.
+
+**Scope decision forced by the hardware:** pixel-level image generation is out of scope
+for v1. On one A100 in ten weeks a generative decoder trained to publication quality is
+not achievable, and chasing it is the most likely way to finish with nothing. The
+anti-collapse anchor becomes **feature-space reconstruction** — predicting the frozen
+vision encoder's features for the swapped span — which gives the same structural
+guarantee against collapse and the same "information retained" measurement at a fraction
+of the cost. The `T→I→T` cycle still runs in full (read-back needs no generation);
+`I→T→I` runs in feature space. Pixel reconstruction is future work.
+
+**Phase 0 — Instrument (week 1).** Substitution corpus builder: glyph renderer with
+controlled font/size/background/noise; span aligner for Flickr30k Entities and Visual
+Genome; paraphrase and re-render generators for the MSG denominator. Fix the train/held-out
+splits now and never revisit them. CPU-only apart from the Gate 0 check.
+*Exit:* corpus builder produces all three tiers with paired views, unit-tested, and
+**Gate 0** passed (~1 GPU-hour).
 
 **Phase 1 — Measure (weeks 2–3).** Full metric suite against off-the-shelf Qwen3-VL-2B.
-Inference only — a single H100 or an A100 is enough. Test H1–H3.
-*Exit:* the modality-substitution-gap study, with per-tier and per-word-class breakdowns.
-**This is a standalone workshop paper and the first real go/no-go.**
+Inference only, ~30 GPU-hours including dev iteration. Tests H1–H3.
+*Exit:* the modality-substitution-gap study, per-tier and per-word-class. **Gate 1 —
+the first real go/no-go, with an explicit DROP branch.**
 
-**Phase 2 — Train for invariance (weeks 4–6).** ISO objective, LoRA then full FT,
-understanding side only. Ablation table §6.3. Track the frontier plot at every checkpoint.
-*Exit:* H4 answered; frontier plot with baseline and trained points.
+**Phase 2 — Train for invariance (weeks 4–7).** ISO objective, LoRA for all six configs,
+one full fine-tune to confirm the winner isn't a LoRA artifact. ~90 GPU-hours.
+Frontier plot logged at every eval step, not reconstructed afterwards.
+**Run the render-augmentation-only ablation in week 5, not week 7** — it is the most
+likely way this project produces a result that looks good and means nothing.
+*Exit:* H4 answered. **Gate 2**, whose condition (d) can drop the method claim outright.
 
-**Phase 3 — Close the cycle (weeks 7–10).** Add generation. Rate–distortion curves for both
-directions. Test H5 on held-out relational composition.
-*Exit:* full paper draft.
+**Phase 3 — Downstream and cycles (weeks 8–10).** H5 on held-out relational composition,
+3 seeds. `T→I→T` read-back cycle in full; `I→T→I` in feature space, as rate–distortion
+curves. Paper drafting runs in parallel from week 8, not after. ~60 GPU-hours.
+*Exit:* **Gate 3** — pass gives the full world-model claim, fail downgrades to a
+measurement-plus-method paper with an explicitly negative H5.
 
-**Phase 4 — Scale and write.** One scale point up (8B) to show the trend, or a second model
-family to show it is not Qwen-specific. Reviewers will ask for one of these.
+**Scale-up is not in the 10 weeks.** One A100 cannot deliver an 8B scale point on top of
+the above. If reviewers demand one, it is a post-submission run on borrowed hardware —
+plan the paper so the claim does not depend on it.
 
 ---
 
@@ -356,8 +376,8 @@ family to show it is not Qwen-specific. Reviewers will ask for one of these.
 
 ## 9. Open questions for you
 
-1. **Compute:** what hardware is actually available, and for how long? Phase 1 needs one GPU
-   for inference. Phase 2 wants 4–8 for a decent ablation sweep.
+1. ~~**Compute**~~ — answered: 1 × A100 80GB. Plan re-costed in `docs/COMPUTE.md`;
+   pixel generation descoped as a consequence (§7).
 2. **Generation base:** bolt a decoder onto Qwen3-VL, or switch to a unified any-to-any base
    at Phase 3? Decide with Phase 1 data — but if you already have a preference it changes what
    Phase 0 builds.
