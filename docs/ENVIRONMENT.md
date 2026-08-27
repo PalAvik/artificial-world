@@ -226,10 +226,28 @@ container). List what's actually published, with vision models flagged:
 python scripts/find_model.py
 ```
 
-`pipeline_tag: image-text-to-text` means the model takes images;
-`text-generation` means it does not. That distinction is the whole point of this
-check — `Qwen/Qwen3.5-2B` is text-only and cannot host the experiment, and the
-Qwen3.5 / Qwen3-VL naming makes it easy to miss.
+`pipeline_tag: image-text-to-text` means the model takes images. But that tag is
+uploader-set metadata; `config.json` is what transformers actually loads, so settle
+it there:
+
+```bash
+python scripts/find_model.py --inspect Qwen/Qwen3.5-2B --inspect Qwen/Qwen3-VL-2B-Instruct
+```
+
+A `vision_config` block means it sees; its absence means it does not.
+
+> **The Qwen3.5 family is natively multimodal**, in the same shape as Gemma 3:
+> `model_type: qwen3_5` is `Qwen3_5Config`, carrying `vision_config` +
+> `text_config`, and resolves to `Qwen3_5ForConditionalGeneration`.
+> `model_type: qwen3_5_text` is `Qwen3_5TextConfig` and resolves to
+> `Qwen3_5ForCausalLM`, which is text-only. So there is **no separate
+> "Qwen3.5-VL" line to hunt for** — vision is folded into the main one, and only
+> the checkpoint's own config says which variant you have.
+>
+> If `Qwen/Qwen3.5-2B` reports `qwen3_5` with a `vision_config`, **prefer it**:
+> it is the newest generation at the right size, and Qwen3-VL-2B becomes the
+> generational control. If it reports `qwen3_5_text`, use Qwen3-VL-2B as the base
+> and keep Qwen3.5-2B as the text-only ablation baseline.
 
 > Note: `HfApi.list_models()` dropped the `direction` argument in
 > `huggingface_hub` 1.x, where `sort="downloads"` already returns descending.

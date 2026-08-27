@@ -254,24 +254,39 @@ Any invariance gain reported alongside its retention cost, always.
 
 ### 6.1 Base model — one correction to the starting point
 
-`Qwen/Qwen3.5-2B` (released March 2026) is a **text-only** LLM. It has no vision encoder, so
-it cannot host this experiment as-is. Verified against its model card; the Qwen3.5 small line
-is 0.8B / 2B / 4B / 9B, text.
+The Qwen3.5 architecture is **natively multimodal**, in the same shape as Gemma 3 —
+settled by reading `transformers`' own config classes rather than model-card prose:
 
-Recommendation:
+| `model_type` | Config class | Resolves to | Sees images |
+|---|---|---|---|
+| `qwen3_5` | `Qwen3_5Config` (`vision_config` + `text_config`) | `Qwen3_5ForConditionalGeneration` | yes |
+| `qwen3_5_text` | `Qwen3_5TextConfig` | `Qwen3_5ForCausalLM` | no |
 
-- **Workhorse: `Qwen3-VL-2B`** — confirmed to exist, right size, native interleaved
-  text/image context, strong OCR (which matters a lot for Tier B). Understanding-only, which
-  is fine for Phases 0–2.
-- **Check first:** whether the Qwen3.5-VL line ships a ≤4B variant. Sources conflict on
-  whether Qwen3.5's vision capability is a separate VL series or folded into the main line,
-  and `huggingface.co` is blocked from this container so I could not resolve it directly.
-  If a small Qwen3.5-VL exists, prefer it and keep Qwen3-VL-2B as the generational control.
-- **Keep `Qwen3.5-2B` as the text-only ablation** — genuinely useful for isolating what the
-  vision tower contributes versus what the LM already does with rendered text descriptions.
-- **Phase 3 (generation)** needs either a discrete visual tokenizer + decoder bolted onto the
-  VLM, or a unified any-to-any base. Decide at the Phase 2/3 boundary with Phase 1 data in
-  hand; do not pre-commit now.
+So there is **no separate "Qwen3.5-VL" line to hunt for** — vision is folded into the
+main one, which is why searching for one turned up nothing. Only a checkpoint's own
+`config.json` says which variant it is, and `pipeline_tag` is uploader-set metadata
+that can disagree.
+
+**This is the first Gate 0 task, and it is one command:**
+
+```bash
+python scripts/find_model.py --inspect Qwen/Qwen3.5-2B --inspect Qwen/Qwen3-VL-2B-Instruct
+```
+
+- If `Qwen/Qwen3.5-2B` reports `qwen3_5` **with** a `vision_config` → **prefer it as
+  the base model.** Newest generation at the right size, and `Qwen3-VL-2B` becomes the
+  generational control rather than the workhorse.
+- If it reports `qwen3_5_text` → base on **`Qwen3-VL-2B`** (right size, native
+  interleaved context, strong OCR, which matters a great deal for Tier B), and keep
+  `Qwen3.5-2B` as the **text-only ablation baseline** — useful for isolating what the
+  vision tower contributes versus what the LM already does with rendered text.
+
+Either way, record the resolved id and `model_type` in `results/RESULTS.md` before any
+run: the base model is part of every number the project reports.
+
+**Phase 3 (generation)** would need either a discrete visual tokenizer and decoder
+bolted onto the VLM, or a unified any-to-any base — but pixel generation is descoped
+for v1 (§7), so this decision does not block anything now.
 
 ### 6.2 The ISO objective (Invariant Substitution Objective)
 

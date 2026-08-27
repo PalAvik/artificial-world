@@ -74,19 +74,58 @@ def main() -> int:
     print(f"device: {torch.cuda.get_device_name(0)}")
     print(f"torch:  {torch.__version__} (cuda {torch.version.cuda})")
 
-    from transformers import AutoModelForCausalLM, AutoProcessor
+    from transformers import AutoConfig, AutoProcessor
+    try:
+        # The auto class for image-text-to-text models. qwen3_vl maps to
+        # Qwen3VLForConditionalGeneration here; AutoModelForCausalLM does not
+        # know about VLM configs at all and raises a wall of config names.
+        from transformers import AutoModelForImageTextToText as AutoVLM
+    except ImportError:
+        from transformers import AutoModelForVision2Seq as AutoVLM
 
     print(f"\nloading {args.model} ...")
-    processor = AutoProcessor.from_pretrained(args.model, trust_remote_code=True)
-    model = AutoModelForCausalLM.from_pretrained(
-        args.model,
-        torch_dtype=torch.bfloat16,
-        attn_implementation=args.attn,
-        device_map="cuda:0",
-        trust_remote_code=True,
-    ).eval()
+
+    # Catch the text-only trap before it becomes an unreadable wall of config
+    # names. Ask the same mapping AutoVLM resolves through, so this agrees with
+    # what the load will actually do (PLAN.md §6.1).
+    cfg = AutoConfig.from_pretrained(args.model)
+    model_type = getattr(cfg, "model_type", None)
+    try:
+        from transformers.models.auto.modeling_auto import (
+            MODEL_FOR_IMAGE_TEXT_TO_TEXT_MAPPING_NAMES as VLM_TYPES)
+        can_see = model_type in VLM_TYPES
+    except ImportError:
+        VLM_TYPES = None
+        can_see = None  # unknown: warn, but never block on a heuristic
+
+    if can_see is False:
+        print(f"  FAIL: model_type '{model_type}' is not an image-text-to-text "
+              "model — it cannot take images.")
+        print("  Qwen3.5-2B is text-only and cannot host this experiment; it is the")
+        print("  ablation baseline, not the base model. Run scripts/find_model.py to")
+        print("  pick one whose pipeline_tag is image-text-to-text.")
+        return 1
+    if can_see is None and not any(
+            hasattr(cfg, a) for a in ("vision_config", "vision_encoder", "visual")):
+        print(f"  ! {type(cfg).__name__} exposes no obvious vision config — "
+              "continuing, but expect the image view to fail below.")
+
+    processor = AutoProcessor.from_pretrained(args.model)
+    load_kwargs = dict(attn_implementation=args.attn, device_map="cuda:0")
+    try:
+        # `torch_dtype` was renamed to `dtype`. Retry only on the rename itself;
+        # a blanket retry would re-run a slow load for an unrelated TypeError
+        # and then report the wrong cause.
+        model = AutoVLM.from_pretrained(args.model, dtype=torch.bfloat16, **load_kwargs)
+    except TypeError as exc:
+        if "dtype" not in str(exc):
+            raise
+        model = AutoVLM.from_pretrained(args.model, torch_dtype=torch.bfloat16,
+                                        **load_kwargs)
+    model = model.eval()
     n_params = sum(p.numel() for p in model.parameters())
-    print(f"  loaded: {n_params / 1e9:.2f}B params, attn={args.attn}")
+    print(f"  loaded: {type(model).__name__}, {n_params / 1e9:.2f}B params, "
+          f"attn={args.attn}")
 
     # The paired view that the whole project is built on: same context, one span
     # expressed as text tokens in V_T and as pixels in V_I.

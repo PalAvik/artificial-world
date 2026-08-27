@@ -40,8 +40,11 @@ gets written until Phase 1 reports. See `PLAN.md` §7.
 
 ## Hardware
 
-One A100 80GB. The base model is a ~2B VLM — note that `Qwen/Qwen3.5-2B` is text-only and
-cannot host this experiment as-is (`PLAN.md` §6.1). Pixel-level image generation is out of
-scope for v1 as a direct consequence of the hardware budget; see `PLAN.md` §7.
+One A100 80GB (B200 and MIG are opportunistic only — see `docs/GATES.md` hardware
+policy). The base model is a ~2B VLM; which one is a Gate 0 decision settled by
+`python scripts/find_model.py --inspect ...`, because the Qwen3.5 family is natively
+multimodal and only a checkpoint's `config.json` says whether it carries a vision
+tower (`PLAN.md` §6.1). Pixel-level image generation is out of scope for v1 as a
+direct consequence of the hardware budget; see `PLAN.md` §7.
 
 Start with `docs/ENVIRONMENT.md`, then `python scripts/smoke_test.py` before anything else.
