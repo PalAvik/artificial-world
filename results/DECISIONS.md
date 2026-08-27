@@ -110,7 +110,42 @@ rather than an artifact — which is what H2 needs in order to mean anything.
 ---
 
 ## Gate 1 — Does the gap exist? · due end of Week 3
-_Not yet reached._
+
+**2026-08-27 — first Phase 1 run. Tier B result stands; decision deferred.**
+
+| tier | MSG | 95% CI | cross | within | read-back |
+|---|---|---|---|---|---|
+| B | **3.023** | [2.953, 3.096] | 0.1485 | 0.0491 | 0.991 |
+| C | 4.052 | [3.981, 4.127] | 0.1369 | 0.0338 | 0.000 (invalid) |
+
+n=2000 per tier, A100, Qwen3.5-2B, fa2, TORCH_DISABLE_NATIVE_JIT=1.
+
+**Tier B: H1 confirmed, and not marginally.** MSG 3.02 means crossing modalities
+costs three times what re-rendering or re-casing the same span costs, with a CI
+nowhere near the 1.25 floor. Read-back 0.991 means conditioning discards 19 items
+in 2000, so the number is not an OCR artifact.
+
+**Tier C is not yet interpretable, for a defect in the instrument rather than in
+the result.** `read_back` asks the model to transcribe text in the image, and Tier
+C images are relation diagrams containing no text — so 0.000 was guaranteed by
+construction and says nothing. Worse, it meant *nothing had verified the model can
+decode those diagrams at all*. MSG 4.05 is equally consistent with "relations do
+not transfer across modalities" and with "these diagrams are meaningless to the
+model", and those have opposite implications.
+
+Fixed by adding a forced-choice comprehension check that applies to every tier:
+score the true span against a same-group distractor under each view. Accuracy on
+the image view is the validity check; the gap between views is Gate 1's functional
+delta, which the first run did not measure at all.
+
+**Gate 1 cannot be called yet**, on two counts:
+1. PASS requires >=2 of 3 tiers. Tier B qualifies; Tier C is pending its validity
+   check; Tier A has not been run (needs Flickr30k or Visual Genome on disk).
+2. PASS requires a functional accuracy delta >= 5 points, which was not measured.
+
+Re-run with the fixes before the gate date. If Tier C's image view lands near
+chance, that is itself a finding about the diagram design, not a licence to
+report MSG 4.05.
 
 ## Gate 2 — Is it trainable, and is the effect real? · due end of Week 7
 _Not yet reached._

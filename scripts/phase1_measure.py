@@ -45,7 +45,8 @@ import torch
 
 from freeflow.data import tier_b, tier_c, vocab
 from freeflow.data.render import FontSet, RenderConfig
-from freeflow.metrics import aggregate, cycle, geometry, msg, probe, runner
+from freeflow.metrics import (aggregate, cycle, functional, geometry, msg,
+                              probe, runner)
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -88,14 +89,37 @@ def distances(cap: dict, layer_key: str, offset_free: bool) -> dict:
             "within_image": d(h_i, h_ic)}
 
 
-def measure_tier(model, processor, items, batch: int, layers, device: str) -> dict:
-    """Read-back, capture, then every metric for one tier."""
+def measure_tier(model, processor, items, batch: int, layers, device: str,
+                 functional_n: int = 256, seed: int = 0) -> dict:
+    """Validity check, capture, then every metric for one tier."""
     t0 = time.perf_counter()
+    tier = items[0].tier
 
-    # Read-back first: it sets the mask the conditioned metrics need, and a
-    # tier whose spans cannot be read has nothing to say about geometry.
-    rb = cycle.mark_read_ok(model, processor, items, batch)
-    print(f"    {rb}")
+    # Read-back only where the image *contains text*. Asking a relation diagram
+    # to be transcribed is a category error, and the first Phase 1 run duly
+    # reported 0.000 on Tier C. Other tiers get their validity from the
+    # forced-choice check below instead.
+    if tier == "B":
+        rb = cycle.mark_read_ok(model, processor, items, batch)
+        print(f"    {rb}")
+        readback = {"accuracy": rb.accuracy, "cer": rb.cer, "applicable": True}
+    else:
+        for it in items:
+            it.read_ok = True
+        readback = {"accuracy": None, "cer": None, "applicable": False,
+                    "note": "read-back is text-transcription; not defined for "
+                            f"tier {tier} images"}
+        print(f"    read-back not applicable to tier {tier}")
+
+    # Forced choice: the validity check for every tier, and Gate 1's functional
+    # delta. Capped because it runs one item at a time.
+    subset = items[:functional_n]
+    fc = functional.forced_choice(model, processor, subset, seed=seed,
+                                  device=device)
+    print(f"    forced choice: {fc}")
+    warning = fc.validity()
+    if warning:
+        print(f"    ! {warning}")
 
     cap = runner.capture(model, processor, items, batch=batch, layers=layers,
                          device=device)
@@ -106,7 +130,16 @@ def measure_tier(model, processor, items, batch: int, layers, device: str) -> di
 
     out: dict = {
         "n": len(items),
-        "readback": {"accuracy": rb.accuracy, "cer": rb.cer},
+        "tier": tier,
+        "readback": readback,
+        "functional": {
+            "text_accuracy": fc.text.accuracy,
+            "image_accuracy": fc.image.accuracy,
+            "delta": fc.delta,
+            "n": fc.text.n,
+            "chance": fc.image.chance,
+            "validity_warning": warning,
+        },
         "layers_captured": captured,
         "jsd": cap["text"].jsd.summary(),
         "seconds": 0.0,
@@ -185,6 +218,23 @@ def _denominator_warning(d: dict, ratio: float = 20.0) -> str | None:
     return None
 
 
+def _tier_header(res: dict) -> str:
+    rb = res["readback"]
+    parts = [f"n={res['n']}"]
+    if rb.get("applicable"):
+        parts.append(f"read-back {rb['accuracy']:.3f} (CER {rb['cer']:.4f})")
+    else:
+        parts.append("read-back n/a")
+    f = res["functional"]
+    parts.append(f"forced choice: text {f['text_accuracy']:.3f} / "
+                 f"image {f['image_accuracy']:.3f}, delta {f['delta']:+.3f}")
+    parts.append(f"{res['seconds']}s")
+    line = " · ".join(parts)
+    if f.get("validity_warning"):
+        line += f"\n\n> **Validity:** {f['validity_warning']}."
+    return line
+
+
 def _msg_dict(r: msg.MSGResult) -> dict:
     return {"msg": r.ratio_of_means, "mean_of_ratios": r.mean_of_ratios,
             "ci": list(r.ci) if r.ci else None, "n": r.n,
@@ -209,8 +259,7 @@ def render_report(results: dict, args) -> str:
     for tier, res in results.items():
         raw, off = res["msg_raw"], res["msg_offset_free"]
         L += [f"## Tier {tier}", "",
-              f"n={res['n']} · read-back {res['readback']['accuracy']:.3f} "
-              f"(CER {res['readback']['cer']:.4f}) · {res['seconds']}s", "",
+              _tier_header(res), "",
               "| quantity | MSG | 95% CI | cross | within |",
               "|---|---|---|---|---|"]
         for label, block in (("raw", raw), ("offset-free", off)):
@@ -289,6 +338,10 @@ def main() -> int:
     ap.add_argument("--attn", default="flash_attention_2")
     ap.add_argument("--device", default="cuda:0")
     ap.add_argument("--layers", type=int, nargs="+", default=None)
+    ap.add_argument("--functional-n", type=int, default=256,
+                    help="items for the forced-choice check. Runs one item at a "
+                         "time, so it is the slow path; 256 gives a +/-6pt CI on "
+                         "the accuracy delta, enough for Gate 1's 5pt threshold")
     ap.add_argument("--held-out-fonts", action="store_true",
                     help="Gate 2 evaluation set. Not for Gate 1.")
     ap.add_argument("--out", default="results/phase1")
@@ -316,7 +369,7 @@ def main() -> int:
                              args.held_out_fonts)
         print(f"    {len(items)} items, {len({i.span_id for i in items})} unique spans")
         res = measure_tier(model, processor, items, args.batch, args.layers,
-                           args.device)
+                           args.device, args.functional_n, args.seed)
         r = msg.MSGResult(**{
             "ratio_of_means": res["msg_raw"]["overall"]["msg"],
             "mean_of_ratios": res["msg_raw"]["overall"]["mean_of_ratios"],
@@ -325,7 +378,15 @@ def main() -> int:
             "n": res["msg_raw"]["overall"]["n"],
             "ci": tuple(res["msg_raw"]["overall"]["ci"])
             if res["msg_raw"]["overall"]["ci"] else None})
-        res["gate1"] = msg.gate1_verdict(r)
+        verdict = msg.gate1_verdict(r)
+        f = res["functional"]
+        if f["validity_warning"]:
+            verdict = (f"INVALID: {f['validity_warning']}. MSG {r.ratio_of_means:.2f} "
+                       "is not interpretable for this tier.")
+        elif abs(f["delta"]) < 0.05 and verdict.startswith("PASS"):
+            verdict = (f"MSG PASS but functional delta {f['delta']:+.3f} < 0.05 — "
+                       "Gate 1 needs both (docs/GATES.md)")
+        res["gate1"] = verdict
         results[tier] = res
         print(f"    MSG {r}")
         print(f"    {res['gate1']}")

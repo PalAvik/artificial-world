@@ -25,7 +25,7 @@ from PIL import Image
 
 from freeflow.data import tier_b, views
 from freeflow.data.render import FontSet, RenderConfig
-from freeflow.metrics import cycle, runner
+from freeflow.metrics import cycle, functional, runner
 
 ROOT = Path(__file__).resolve().parents[1]
 VISION = "<|vision_start|><|image_pad|><|vision_end|>"
@@ -335,6 +335,71 @@ class TestDriver:
     def test_build_corpus_rejects_tier_a_without_data(self):
         with pytest.raises(ValueError, match="Flickr30k"):
             driver.build_corpus("A", 4, None, None, 0, False)
+
+
+# ------------------------------------------------- forced choice / validity ---
+
+class TestForcedChoice:
+    def test_distractors_come_from_the_same_group(self, corpus):
+        """A distractor from another word class would be separable on register
+        alone, and the task would stop testing whether the span was encoded."""
+        d = functional.make_distractors(corpus, seed=0)
+        by_group = {}
+        for it in corpus:
+            by_group.setdefault(it.group, set()).add(it.span_text)
+        for it, dis in zip(corpus, d):
+            assert dis != it.span_text
+            assert dis in by_group[it.group]
+
+    def test_single_span_group_falls_back_rather_than_self_matching(self):
+        from freeflow.data import tier_c
+        items = tier_c.build(10, seed=0)
+        for it, dis in zip(items, functional.make_distractors(items, seed=0)):
+            assert dis != it.span_text
+
+    def test_scores_both_views_and_reports_a_delta(self, stack, corpus):
+        model, proc = stack
+        r = functional.forced_choice(model, proc, corpus[:8], device="cpu")
+        assert 0.0 <= r.text.accuracy <= 1.0
+        assert 0.0 <= r.image.accuracy <= 1.0
+        assert r.delta == pytest.approx(r.text.accuracy - r.image.accuracy)
+
+    def test_flags_an_image_view_stuck_at_chance(self):
+        """The Tier C failure the first Phase 1 run could not see: a diagram the
+        model cannot decode still yields a confident MSG."""
+        blind = functional.FunctionalResult(
+            text=functional.ChoiceResult(0.95, 100),
+            image=functional.ChoiceResult(0.52, 100))
+        assert "cannot recover the span" in blind.validity()
+
+    def test_no_warning_when_the_image_view_is_informative(self):
+        ok = functional.FunctionalResult(
+            text=functional.ChoiceResult(0.95, 100),
+            image=functional.ChoiceResult(0.84, 100))
+        assert ok.validity() is None
+
+
+class TestTierAwareValidity:
+    def test_read_back_is_skipped_for_a_tier_without_text_in_its_images(
+            self, stack):
+        """Asking a relation diagram to be transcribed is a category error;
+        the first Phase 1 run reported read-back 0.000 on Tier C for that
+        reason alone."""
+        from freeflow.data import tier_c
+        model, proc = stack
+        items = tier_c.build(20, seed=0)
+        res = driver.measure_tier(model, proc, items, batch=8, layers=None,
+                                  device="cpu", functional_n=8)
+        assert res["readback"]["applicable"] is False
+        assert res["readback"]["accuracy"] is None
+        assert all(it.read_ok for it in items)
+
+    def test_read_back_still_runs_for_tier_b(self, stack, corpus):
+        model, proc = stack
+        res = driver.measure_tier(model, proc, corpus[:24], batch=8, layers=None,
+                                  device="cpu", functional_n=8)
+        assert res["readback"]["applicable"] is True
+        assert res["readback"]["accuracy"] is not None
 
 
 # ------------------------------------------------------------- read-back ---
