@@ -29,28 +29,8 @@ from typing import Sequence
 
 import torch
 
+from ..data.views import SpanItem  # noqa: F401  (re-exported)
 from .distribution import StreamingJSD, logits_at
-
-
-@dataclass
-class SpanItem:
-    """One evaluation item: a context whose span is expressed four ways.
-
-    The four views are the numerator and denominator of the MSG. `paraphrase`
-    and `image_alt` are the within-modality controls — a text restatement and a
-    re-render in a different font (or a different photo, in Tier A) — and
-    without them the gap has no denominator and no interpretation.
-    """
-
-    prefix: str
-    span_text: str
-    suffix: str                      # shared continuation, must be non-empty
-    span_image: object               # PIL.Image of the span
-    span_paraphrase: str
-    span_image_alt: object
-    span_id: str                     # probe label
-    group: str = "all"               # word class, or tier
-    read_ok: bool = True             # did read-back transcribe this span?
 
 
 @dataclass
