@@ -15,6 +15,7 @@ modality gap gets measured.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Sequence
 
 import torch
 
@@ -70,6 +71,89 @@ def offset_free_distance(a: torch.Tensor, b: torch.Tensor,
     """
     stats = stats or offset_stats(a, b)
     return cosine_distance(_as_float(a) - stats.mean_a, _as_float(b) - stats.mean_b)
+
+
+@dataclass(frozen=True)
+class MapFit:
+    """A fitted map plus the fold structure it was fitted under."""
+
+    kind: str
+    folds: int
+    train_n: int
+
+
+def _fit_map(source: torch.Tensor, target: torch.Tensor, kind: str,
+             ridge: float) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Return `(A, mean_s, mean_t)` for `x -> (x - mean_s) @ A + mean_t`."""
+    mean_s, mean_t = source.mean(0), target.mean(0)
+    x, y = source - mean_s, target - mean_t
+    if kind == "orthogonal":
+        # Orthogonal Procrustes: min ||xA - y|| over A^T A = I, so A = U V^T
+        # from the SVD of x^T y. The nearest *rotation*, nothing more.
+        u, _, vh = torch.linalg.svd(x.T @ y, full_matrices=False)
+        return u @ vh, mean_s, mean_t
+    if kind == "linear":
+        # Ridge, so a fit on fewer items than dimensions stays defined. The
+        # penalty is what keeps this a claim about structure rather than about
+        # memorising the training fold.
+        d = x.shape[1]
+        gram = x.T @ x + ridge * torch.eye(d, dtype=x.dtype, device=x.device)
+        return torch.linalg.solve(gram, x.T @ y), mean_s, mean_t
+    raise ValueError(f"unknown map kind {kind!r}; expected orthogonal or linear")
+
+
+def cross_validated_map(source: torch.Tensor, target: torch.Tensor,
+                        also: Sequence[torch.Tensor] = (),
+                        kind: str = "orthogonal", folds: int = 5,
+                        ridge: float = 1e-3, seed: int = 0
+                        ) -> tuple[torch.Tensor, list[torch.Tensor], MapFit]:
+    """Map `source` toward `target`, every row predicted out-of-fold.
+
+    The generalisation of `offset_free_distance`, one step up a hierarchy of
+    nulls: a constant offset is a translation, this is a rotation
+    (`orthogonal`) or an arbitrary linear change of basis (`linear`). Each asks
+    the same question at a different strength — *is the modality gap a
+    reversible re-expression of the same information, or is the information
+    itself different?*
+
+    This matters because a high `linear_cka` alongside a large raw distance is
+    precisely the signature of a rotation: CKA is invariant to orthogonal
+    transforms, so it reports two clouds as identically shaped while per-item
+    distance reports them as far apart. Only fitting the map distinguishes
+    "differently oriented" from "differently informed".
+
+    **Held out, necessarily.** A map fitted and evaluated on the same items can
+    drive any distance to zero given enough dimensions, which would prove
+    nothing at all. Every row here is predicted by a map that never saw it.
+
+    `also` carries additional matrices — the within-modality control — through
+    the *same* fold's map, so the MSG ratio stays coherent: mapping the
+    numerator while leaving the denominator alone would manufacture a collapse.
+    """
+    source, target = _as_float(source), _as_float(target)
+    also = [_as_float(x) for x in also]
+    n = source.shape[0]
+    if n < folds or n < 2:
+        raise ValueError(f"need at least {max(folds, 2)} items to fit a "
+                         f"cross-validated map; got {n}")
+
+    perm = torch.randperm(n, generator=torch.Generator().manual_seed(seed))
+    out = torch.empty_like(source)
+    out_also = [torch.empty_like(x) for x in also]
+    train_sizes = []
+    for f in range(folds):
+        test_idx = perm[f::folds]
+        mask = torch.ones(n, dtype=torch.bool)
+        mask[test_idx] = False
+        train_idx = torch.arange(n)[mask]
+        train_sizes.append(int(train_idx.numel()))
+        A, mean_s, mean_t = _fit_map(source[train_idx], target[train_idx],
+                                     kind, ridge)
+        out[test_idx] = (source[test_idx] - mean_s) @ A + mean_t
+        for j, x in enumerate(also):
+            out_also[j][test_idx] = (x[test_idx] - mean_s) @ A + mean_t
+    return out, out_also, MapFit(kind=kind, folds=folds,
+                                 train_n=min(train_sizes))
 
 
 def linear_cka(a: torch.Tensor, b: torch.Tensor) -> float:

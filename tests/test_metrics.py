@@ -379,3 +379,54 @@ class TestContinuationLogits:
         with pytest.raises(ValueError, match="output embedding"):
             runner.continuation_logits(_NoHead(), torch.randn(1, 4, 3),
                                        torch.tensor([1]), 2)
+
+
+class TestCrossValidatedMap:
+    """The null one level above the offset: is the gap a change of basis?"""
+
+    def test_a_rotation_is_undone_and_a_real_difference_is_not(self):
+        torch.manual_seed(0)
+        n, d = 400, 16
+        text = torch.randn(n, d)
+        q, _ = torch.linalg.qr(torch.randn(d, d))       # a true rotation
+        rotated = text @ q
+        mapped, _, fit = geometry.cross_validated_map(rotated, text,
+                                                      kind="orthogonal")
+        assert fit.kind == "orthogonal"
+        assert geometry.cosine_distance(mapped, text).mean() < 0.05
+        # Independent noise is not a rotation of anything, and must survive.
+        noise = torch.randn(n, d)
+        mapped_noise, _, _ = geometry.cross_validated_map(noise, text,
+                                                          kind="orthogonal")
+        assert geometry.cosine_distance(mapped_noise, text).mean() > 0.5
+
+    def test_every_row_is_predicted_out_of_fold(self):
+        """A map fitted and scored on the same rows drives any distance to zero
+        given enough dimensions, which would prove nothing. Here d > n per fold,
+        so an in-fold fit would fit perfectly and the test would catch it."""
+        torch.manual_seed(0)
+        n, d = 40, 64
+        source, target = torch.randn(n, d), torch.randn(n, d)
+        mapped, _, _ = geometry.cross_validated_map(source, target,
+                                                    kind="linear", folds=5)
+        # Unrelated data: held out, the map cannot help.
+        assert geometry.cosine_distance(mapped, target).mean() > 0.5
+
+    def test_the_control_rides_the_same_fold_map(self):
+        """Mapping the numerator while leaving the denominator alone would
+        manufacture a collapse in the ratio."""
+        torch.manual_seed(0)
+        n, d = 200, 16
+        text = torch.randn(n, d)
+        q, _ = torch.linalg.qr(torch.randn(d, d))
+        image = text @ q
+        image_ctl = (text + 0.05 * torch.randn(n, d)) @ q
+        mapped, extra, _ = geometry.cross_validated_map(
+            image, text, also=[image_ctl], kind="orthogonal")
+        # The within-image control stays close to the mapped image view, so the
+        # MSG denominator survives the mapping intact.
+        assert geometry.cosine_distance(mapped, extra[0]).mean() < 0.15
+
+    def test_refuses_to_fit_on_too_few_items(self):
+        with pytest.raises(ValueError, match="at least"):
+            geometry.cross_validated_map(torch.randn(3, 8), torch.randn(3, 8))

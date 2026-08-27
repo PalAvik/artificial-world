@@ -31,15 +31,20 @@ SYNONYMS: dict[str, str] = {
 }
 
 
-def _control(span: str, kind: ControlKind) -> str:
+def _control(span: str, kind: ControlKind) -> tuple[str, str]:
+    """The control span, and which kind was *actually* applied.
+
+    The two can differ: a word with no synonym falls back to a surface variant
+    rather than returning the span itself, which would collapse the
+    denominator. Reporting the fallback matters — a denominator that mixes
+    synonyms and capitalisation flips is two different measurements averaged
+    together, and the surface half is much the smaller of the two.
+    """
     if kind is ControlKind.SYNONYM:
         alt = SYNONYMS.get(span.lower())
         if alt:
-            return alt
-        # No synonym exists — fall back rather than silently returning the span
-        # itself, which would collapse the denominator.
-        return surface_variant(span)
-    return surface_variant(span)
+            return alt, ControlKind.SYNONYM.value
+    return surface_variant(span), ControlKind.SURFACE.value
 
 
 def build(
@@ -70,12 +75,13 @@ def build(
         prefix, suffix = CONTEXTS[i % len(CONTEXTS)]
         img, img_alt, font_a, font_b = render_pair(word, fonts, cfg, rng,
                                                    held_out_fonts)
+        control_text, control_applied = _control(word, control)
         items.append(SpanItem(
             prefix=prefix,
             span_text=word,
             suffix=suffix,
             span_image=img,
-            span_paraphrase=_control(word, control),
+            span_paraphrase=control_text,
             span_image_alt=img_alt,
             # The probe must recover *content*, not surface: two items showing
             # the same word in different fonts share a label.
@@ -84,6 +90,7 @@ def build(
             tier="B",
             meta={"font": font_a, "font_control": font_b,
                   "control_kind": control.value,
+                  "control_applied": control_applied,
                   "held_out_fonts": held_out_fonts,
                   "context": i % len(CONTEXTS)},
         ))

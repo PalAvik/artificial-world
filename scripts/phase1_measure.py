@@ -43,7 +43,7 @@ from pathlib import Path
 
 import torch
 
-from freeflow.data import tier_b, tier_c, vocab
+from freeflow.data import tier_b, tier_c, views, vocab
 from freeflow.data.render import FontSet, RenderConfig
 from freeflow.metrics import (aggregate, cycle, functional, geometry, msg,
                               probe, runner)
@@ -67,9 +67,22 @@ def load_model(path: str, attn: str, device: str):
 
 
 def build_corpus(tier: str, n: int, fonts: FontSet, cfg: RenderConfig,
-                 seed: int, held_out_fonts: bool):
+                 seed: int, held_out_fonts: bool,
+                 control: views.ControlKind = views.ControlKind.SURFACE):
     if tier == "B":
-        return tier_b.build(n, fonts, cfg, seed=seed, held_out_fonts=held_out_fonts)
+        items = tier_b.build(n, fonts, cfg, seed=seed,
+                             held_out_fonts=held_out_fonts, control=control)
+        if control is views.ControlKind.SYNONYM:
+            # Keep only items that actually got a synonym. `_control` falls back
+            # to a capitalisation variant when the word has none, and a mixed
+            # denominator would be two different measurements averaged together.
+            items = [it for it in items
+                     if it.meta.get("control_applied") == "synonym"]
+            if not items:
+                raise SystemExit(
+                    "no Tier B word has a synonym control; extend "
+                    "freeflow/data/tier_b.py SYNONYMS or use --control surface")
+        return items
     if tier == "C":
         return tier_c.build(n, seed=seed)
     raise ValueError(
@@ -77,13 +90,37 @@ def build_corpus(tier: str, n: int, fonts: FontSet, cfg: RenderConfig,
         "on disk; load it with freeflow.data.tier_a and pass the items in.")
 
 
-def distances(cap: dict, layer_key: str, offset_free: bool) -> dict:
-    """Cross-modal and within-modality distances at one captured layer."""
+def distances(cap: dict, layer_key: str, mode: str = "raw",
+              seed: int = 0) -> dict:
+    """Cross-modal and within-modality distances at one captured layer.
+
+    `mode` selects which null the gap is measured against — a hierarchy of
+    increasingly generous accounts of what the gap could be:
+
+      raw          nothing removed.
+      offset_free  a constant per-modality translation removed.
+      procrustes   a rotation removed, fitted out-of-fold.
+      linear       any linear change of basis removed, fitted out-of-fold.
+
+    A gap that survives all four is a difference in information. A gap that
+    dies at any level is a re-expression of the same information, and the level
+    at which it dies says how cheaply it could be undone.
+    """
     h_t = cap["text"].hidden[layer_key]
     h_i = cap["image"].hidden[layer_key]
     h_tc = cap["text_control"].hidden[layer_key]
     h_ic = cap["image_control"].hidden[layer_key]
-    d = geometry.offset_free_distance if offset_free else geometry.cosine_distance
+
+    if mode in ("procrustes", "linear"):
+        kind = "orthogonal" if mode == "procrustes" else "linear"
+        # Map the image view onto the text view, carrying the image control
+        # through the same fold's map so the ratio stays coherent.
+        h_i, (h_ic,), _ = geometry.cross_validated_map(
+            h_i, h_t, also=[h_ic], kind=kind, seed=seed)
+        mode = "raw"
+
+    d = (geometry.offset_free_distance if mode == "offset_free"
+         else geometry.cosine_distance)
     return {"cross": d(h_t, h_i),
             "within_text": d(h_t, h_tc),
             "within_image": d(h_i, h_ic)}
@@ -154,8 +191,10 @@ def measure_tier(model, processor, items, batch: int, layers, device: str,
     }
 
     # Headline MSG, raw and offset-free, at the final layer.
-    for name, off in (("msg_raw", False), ("msg_offset_free", True)):
-        d = distances(cap, final, off)
+    for name, mode in (("msg_raw", "raw"), ("msg_offset_free", "offset_free"),
+                       ("msg_procrustes", "procrustes"),
+                       ("msg_linear", "linear")):
+        d = distances(cap, final, mode, seed=seed)
         report = aggregate.conditioned_msg(
             d["cross"], d["within_text"], d["within_image"], groups, read_ok)
         out[name] = {
@@ -180,8 +219,8 @@ def measure_tier(model, processor, items, batch: int, layers, device: str,
     # Where in the stack the gap lives, and how much of it is a translation.
     per_layer = []
     for i, layer in enumerate(captured):
-        d_raw = distances(cap, str(i), False)
-        d_off = distances(cap, str(i), True)
+        d_raw = distances(cap, str(i), "raw")
+        d_off = distances(cap, str(i), "offset_free")
         stats = geometry.offset_stats(cap["text"].hidden[str(i)],
                                       cap["image"].hidden[str(i)])
         per_layer.append({
@@ -359,6 +398,13 @@ def main() -> int:
                     help="Gate 2 evaluation set. Not for Gate 1.")
     ap.add_argument("--out", default="results/phase1")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--control", choices=[k.value for k in views.ControlKind],
+                    default=views.ControlKind.SURFACE.value,
+                    help="the within-modality text control, i.e. the MSG "
+                         "denominator. 'surface' is a capitalisation variant; "
+                         "'synonym' is a different word with the same meaning "
+                         "and is the stronger comparison. Tier B only, and it "
+                         "restricts the corpus to words that have one.")
     ap.add_argument("--quick", action="store_true", help="n=128, smoke run only")
     args = ap.parse_args()
 
@@ -379,7 +425,8 @@ def main() -> int:
     for tier in args.tiers:
         print(f"\n=== Tier {tier} ===")
         items = build_corpus(tier, args.n, fonts, cfg, args.seed,
-                             args.held_out_fonts)
+                             args.held_out_fonts,
+                             views.ControlKind(args.control))
         print(f"    {len(items)} items, {len({i.span_id for i in items})} unique spans")
         res = measure_tier(model, processor, items, args.batch, args.layers,
                            args.device, args.functional_n, args.seed)

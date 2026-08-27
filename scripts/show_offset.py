@@ -1,4 +1,4 @@
-"""Is the modality gap a removable translation?
+"""Is the modality gap removable, and if so how cheaply?
 
 The decisive number for the Gate 1 extension, and it was computed by the Phase 1
 run and never inspected. MSG measures how far apart the two views sit at the
@@ -8,12 +8,21 @@ displacement.
 
 The distinction is the whole project:
 
-  offset-free MSG collapses toward 1  ->  the gap is a translation. Whatever
-      Phase 2 would learn, a fixed vector already does. The honest output is a
-      short note, not a training program.
+Four nulls, each more generous than the last:
 
-  offset-free MSG stays well above 1  ->  the gap is structural, the views
-      differ in more than position, and there is something to train against.
+  raw            nothing removed.
+  offset-free    a constant per-modality translation removed.
+  rotation-free  an orthogonal map removed, fitted out-of-fold.
+  linear-free    any linear change of basis removed, fitted out-of-fold.
+
+The level at which the gap dies is the result. A gap that dies under a *linear*
+map is one a standard projector already closes -- that is what a VLM's adapter
+is -- and it would make the training program redundant rather than novel. A gap
+that survives all four is a difference in information, which is the only version
+of this project worth running.
+
+The maps are fitted out-of-fold, without exception: fitted and scored on the
+same items, enough dimensions drive any distance to zero and prove nothing.
 
 Reads results/phase1/results.json. Prints, and does not decide anything on its
 own — the drop rule it feeds is written down in results/DECISIONS.md.
@@ -32,6 +41,15 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 DROP_CI_UPPER = 1.25          # docs/GATES.md, Gate 1 DROP row
+
+# Increasingly generous accounts of what the gap could be. A gap that dies at
+# one of these is a re-expression; the level at which it dies says how cheaply
+# it could be undone. Linear is the one that matters most: a projector between
+# modalities is exactly a linear map, so a gap a fitted linear map removes is a
+# gap the standard architecture already knows how to close.
+NULLS = [("msg_offset_free", "offset-free MSG"),
+         ("msg_procrustes", "rotation-free MSG"),
+         ("msg_linear", "linear-map-free MSG")]
 
 
 def _fmt(block: dict) -> str:
@@ -61,23 +79,35 @@ def main() -> int:
         if "msg_raw" not in res:
             continue
         raw = res["msg_raw"]["overall"]
-        off = res["msg_offset_free"]["overall"]
         print(f"=== Tier {tier} ===")
-        print(f"    raw MSG          {_fmt(raw)}")
-        print(f"    offset-free MSG  {_fmt(off)}")
+        print(f"    {'raw MSG':<24} {_fmt(raw)}")
 
-        share = 1.0 - (off["msg"] - 1.0) / (raw["msg"] - 1.0) \
-            if raw["msg"] > 1.0 else float("nan")
-        print(f"    share of the gap explained by a constant offset: {share:.1%}")
+        survives = None
+        for key, label in NULLS:
+            block = (res.get(key) or {}).get("overall")
+            if not block:
+                print(f"    {label:<24} not computed — re-run phase1_measure.py")
+                continue
+            print(f"    {label:<24} {_fmt(block)}", end="")
+            if raw["msg"] > 1.0:
+                share = 1.0 - (block["msg"] - 1.0) / (raw["msg"] - 1.0)
+                print(f"   ({share:.0%} of the gap)")
+            else:
+                print()
+            ci = block.get("ci")
+            upper = ci[1] if ci else block["msg"]
+            if upper < DROP_CI_UPPER and survives is None:
+                survives = label
 
-        off_ci = off.get("ci")
-        upper = off_ci[1] if off_ci else off["msg"]
-        if upper < DROP_CI_UPPER:
-            print(f"    -> TRANSLATION. Offset-free upper bound {upper:.3f} < "
-                  f"{DROP_CI_UPPER}: nothing survives removing the mean.")
+        print()
+        if survives:
+            print(f"    -> REMOVABLE. The gap dies once {survives.lower()} is "
+                  f"taken out (upper bound < {DROP_CI_UPPER}): the two views "
+                  "hold the same information in a different frame.")
         else:
-            print(f"    -> STRUCTURAL. Offset-free upper bound {upper:.3f} >= "
-                  f"{DROP_CI_UPPER}: the gap is more than a displacement.")
+            print("    -> IRREDUCIBLE at every null tested. No translation, "
+                  "rotation or linear change of basis accounts for the gap, so "
+                  "the views differ in information and not only in frame.")
 
         # Where it lives. The offset norm rising with depth while the offset-free
         # distance stays flat is the signature of a pure translation.

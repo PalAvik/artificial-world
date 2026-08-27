@@ -277,6 +277,82 @@ note.** If offset-free MSG holds well above 1.25 on Tier B, the gap is structura
 and Phase 2 has a target even at one valid tier, and Gate 1 passes on a stated
 amendment recorded here rather than on the original wording.
 
+**2026-08-27, extension day 1 — the gap is not a translation. My prediction was
+wrong, and the per-layer table raises a sharper question.**
+
+| tier | raw MSG | offset-free MSG | offset explains | final-layer CKA |
+|---|---|---|---|---|
+| B | 3.023 [2.953, 3.096] | **3.003** [2.946, 3.059] | **1.0%** | 0.906 |
+| C | 4.052 [3.981, 4.127] | 3.377 [3.327, 3.426] | 22.1% | 0.709 |
+
+I predicted TRANSLATION and said so before looking. It is not: removing each
+modality's mean leaves Tier B's MSG essentially untouched. H3 is falsified for
+Tier B.
+
+**Two things in the per-layer table matter more than the headline.**
+
+*The gap peaks mid-stack and then closes.* Tier B's raw cross-modal distance
+runs 0.241 (L3) -> 0.378 (L10) -> 0.148 (L24). The two views diverge through
+the middle of the network and converge by the output — which is what a model
+that has reconciled them would look like, and it is consistent with the image
+view answering the forced choice perfectly.
+
+*CKA never drops below 0.906.* That is the important number and it was sitting
+in the table unremarked. Linear CKA is **invariant to orthogonal transforms**,
+so "CKA 0.906–0.99 alongside a raw distance of 3x the control" has a specific
+reading: the two clouds are near-identically *shaped* and differently
+*oriented*. The offset test asked whether the gap is a translation. It is not.
+But translation is the weakest null in an obvious hierarchy, and I tested only
+that one:
+
+    translation  subset of  rotation  subset of  linear change of basis
+
+**A gap removed by a fitted linear map is a gap a VLM's projector already
+closes** — a modality adapter *is* a linear map — which would make the training
+program redundant rather than novel. That possibility is entirely live at
+CKA 0.91 and was not addressed by anything measured so far.
+
+`geometry.cross_validated_map` now fits both, out-of-fold, and the driver reports
+`msg_procrustes` and `msg_linear` alongside the existing two. Out-of-fold is not
+optional: fitted and scored on the same items, a map has enough dimensions to
+drive any distance to zero and prove nothing. The within-image control rides the
+same fold's map, so the ratio stays coherent — mapping the numerator alone would
+manufacture the collapse.
+
+**Separately, the denominator is weaker than the headline implies.** Tier B's
+within-text control defaults to `ControlKind.SURFACE`, a **capitalisation flip**.
+So MSG 3.023 says the modality gap is 3x the distance between `wisdom` and
+`WISDOM` — a true statement, and a much smaller claim than "3x the distance
+between two expressions of the same content". `ControlKind.SYNONYM` has existed
+unused since the corpus was built; the driver takes `--control synonym` and
+restricts the corpus to words that have one, because a denominator mixing
+synonyms with capitalisation flips would average two different measurements.
+This does not affect the offset or map results, which are ratios computed the
+same way throughout — but it does affect how the headline number should be
+stated, and it should have been stated this way from the first run.
+
+**Neither finding changes the Gate 1 call** recorded above: still not passed,
+still not a drop, extension still ends 2026-09-02. Both are now inputs to the
+pre-registered drop rule, and the rule needs one amendment, made before the
+numbers exist: the rule was written around the offset-free number alone, which
+has now come back STRUCTURAL. It should have covered the whole hierarchy. The
+amended rule for 2026-09-02:
+
+> If the **linear-map-free** MSG's CI upper bound falls below 1.25 on Tier B —
+> the gap is a change of basis, closable by the projector every VLM already has
+> — then regardless of tier coverage, the honest output is a short note, not
+> Phase 2.
+>
+> If it holds above 1.25, the gap is irreducible to a linear re-expression.
+> Combined with at least one instrument-valid tier, that is a real target and
+> Phase 2 proceeds on an amendment recorded here.
+>
+> The rotation-free number is reported but decides nothing on its own: it sits
+> between the two and is diagnostic rather than dispositive.
+
+Recording the amendment's direction honestly: it makes the gate **harder** to
+pass, not easier, and it was written before the number existed.
+
 ## Gate 2 — Is it trainable, and is the effect real? · due end of Week 7
 _Not yet reached._
 

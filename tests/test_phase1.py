@@ -297,7 +297,7 @@ class TestDriver:
         model, proc = stack
         cap = runner.capture(model, proc, corpus, batch=8, device="cpu")
         final = str(len(cap["text"].hidden["layers"]) - 1)
-        d = driver.distances(cap, final, offset_free=False)
+        d = driver.distances(cap, final, "raw")
         assert float(d["cross"].mean()) > 1e-3, "merge state ignores the span"
         assert float(d["within_text"].mean()) > 0
 
@@ -549,3 +549,33 @@ class TestReadBackScoring:
         result = cycle.mark_read_ok(model, proc, items, batch=8)
         assert [it.read_ok for it in items] == result.correct
         assert 0.0 < result.accuracy <= 1.0
+
+
+class TestNullHierarchy:
+    """The gap measured against progressively more generous accounts of it."""
+
+    def test_every_mode_runs_end_to_end(self, stack, corpus):
+        model, proc = stack
+        cap = runner.capture(model, proc, corpus, batch=8, device="cpu")
+        final = str(len(cap["text"].hidden["layers"]) - 1)
+        for mode in ("raw", "offset_free", "procrustes", "linear"):
+            d = driver.distances(cap, final, mode, seed=0)
+            assert set(d) == {"cross", "within_text", "within_image"}
+            assert all(torch.isfinite(v).all() for v in d.values())
+
+    def test_a_rotated_view_survives_raw_and_dies_under_procrustes(self, stack,
+                                                                   corpus):
+        """The discriminating case. If the image view is a rotation of the text
+        view, the raw distance is large and the mapped one is not — which is
+        exactly the claim the Phase 1 numbers need tested."""
+        model, proc = stack
+        cap = runner.capture(model, proc, corpus, batch=8, device="cpu")
+        final = str(len(cap["text"].hidden["layers"]) - 1)
+        h_t = cap["text"].hidden[final].float()
+        torch.manual_seed(0)
+        q, _ = torch.linalg.qr(torch.randn(h_t.shape[1], h_t.shape[1]))
+        cap["image"].hidden[final] = h_t @ q
+        cap["image_control"].hidden[final] = cap["text_control"].hidden[final].float() @ q
+        raw = driver.distances(cap, final, "raw")["cross"].mean()
+        mapped = driver.distances(cap, final, "procrustes")["cross"].mean()
+        assert raw > 0.2 and mapped < raw / 2
