@@ -180,6 +180,49 @@ pip install flash-attn --no-build-isolation
 uv pip install --upgrade "git+https://github.com/huggingface/transformers.git"
 ```
 
+## 1b. Required env var: `TORCH_DISABLE_NATIVE_JIT=1`
+
+```bash
+export TORCH_DISABLE_NATIVE_JIT=1
+```
+
+Needed for the scripts to run on this cluster. It is not a cosmetic flag — record
+it with every run.
+
+**What it disables.** torch 2.13 ships `torch/_native`, a registry of accelerated
+CuTeDSL / Triton / nvmath implementations that *override* the default ATen kernels
+for a specific set of ops:
+
+| Overridden op | Relevance here |
+|---|---|
+| `norm` (incl. **RMSNorm**) | **Every transformer layer.** The hot one. |
+| `bmm_outer_product` | attention-adjacent matmuls |
+| `foreach_mm` | fused optimizer-style batched matmuls |
+| `scatter_add` | gather/scatter paths |
+| `topk` | sampling |
+
+Setting the flag falls back to stock ATen for all of them. They are *also* skipped
+silently when their optional dependencies (`nvidia-cutlass-dsl`, `apache-tvm-ffi`)
+are absent, which is the likeliest reason the flag was needed at all.
+
+**Why it belongs in the run log.** Different kernels for RMSNorm mean different
+floating-point reduction order, so hidden states differ in the last bits. The metric
+suite measures *distances between hidden states*, and Gate 2 turns on a 40% change in
+one. A run with the flag and a run without it are not comparable, exactly as with
+architecture and attention backend — see the hardware policy in `docs/GATES.md`.
+
+**Worth revisiting once, later.** If the flag was a workaround for a missing optional
+dependency, installing it may restore the faster kernels:
+
+```bash
+uv pip install nvidia-cutlass-dsl apache-tvm-ffi
+python scripts/check_gpu.py     # reports whether the overrides are active
+```
+
+Do that as its own change, re-baseline, and never mid-experiment. It is a
+performance question, not a correctness one — so it is not urgent, and it is not
+worth risking a mixed comparison for.
+
 ## 2. Fonts for Tier B rendering — no root required
 
 Pillow loads TrueType files **by absolute path**, so no system font installation is

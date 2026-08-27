@@ -125,9 +125,11 @@ useful for throughput and dangerous for comparisons.
    -order differences across architectures are easily large enough to manufacture
    or mask a 40% MSG change, and a Gate 2 decision made on a mixed comparison is
    worthless.
-2. **Record the architecture, torch version, and attention backend in every
-   `results/RESULTS.md` row.** A run whose hardware is unrecorded cannot be
-   compared to anything later.
+2. **Record the architecture, torch version, attention backend and
+   `TORCH_DISABLE_NATIVE_JIT` in every `results/RESULTS.md` row.** A run whose
+   environment is unrecorded cannot be compared to anything later. That env var
+   swaps the RMSNorm kernel, which changes reduction order and therefore the
+   hidden states this project measures distances between.
 3. **The A100 is the reference machine.** All gated numbers come from it. B200
    and MIG are for exploration, parameter sweeps, and independent jobs whose
    outputs are not compared against A100 runs.

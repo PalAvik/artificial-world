@@ -11,6 +11,7 @@ Usage:
 """
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
@@ -125,6 +126,39 @@ def report_torch(driver: int | None) -> int:
     return problems
 
 
+def report_native_jit() -> None:
+    """Report whether torch 2.13's native DSL op overrides are active.
+
+    torch/_native registers accelerated CuTeDSL/Triton/nvmath implementations
+    that override default ATen kernels for bmm_outer_product, foreach_mm, norm
+    (including RMSNorm), scatter_add and topk. TORCH_DISABLE_NATIVE_JIT=1 turns
+    them off, and they are also skipped silently when their optional
+    dependencies are absent.
+
+    This changes which kernels run, so it changes numerics — it belongs in a
+    run's identity alongside architecture and attention backend
+    (docs/GATES.md, hardware policy).
+    """
+    import importlib.util
+
+    disabled = os.getenv("TORCH_DISABLE_NATIVE_JIT", "0") == "1"
+    deps = {name: importlib.util.find_spec(mod) is not None
+            for name, mod in (("nvidia-cutlass-dsl", "cutlass"),
+                              ("apache-tvm-ffi", "tvm_ffi"))}
+    missing = [n for n, ok in deps.items() if not ok]
+
+    print("\nnative DSL op overrides (torch/_native)")
+    if disabled:
+        print("  TORCH_DISABLE_NATIVE_JIT=1 — overrides OFF, stock ATen kernels")
+        print("  Record this per run: it changes which kernels execute.")
+        if not missing:
+            print("  Both optional deps are present, so the flag may no longer be")
+            print("  needed — worth re-testing without it, on its own, once green.")
+    else:
+        print("  enabled" + (f" but inactive: missing {', '.join(missing)}"
+                             if missing else " with deps present"))
+
+
 def report_attention() -> None:
     try:
         import torch
@@ -149,6 +183,7 @@ def main() -> int:
     report_mig()
     problems = report_torch(driver)
     if problems == 0:
+        report_native_jit()
         report_attention()
 
     print()
