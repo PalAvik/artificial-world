@@ -401,11 +401,18 @@ Nothing passes? The script says so, prints the best accuracy achieved, and names
 branch — CONDITIONAL (one wider sweep) or DROP. Record the call in
 `results/DECISIONS.md` the same day, per `docs/GATES.md`.
 
-Run the CPU tests any time without a GPU:
+Run the CPU tests and the linter any time, without a GPU — do both before
+pushing anything that will run on the cluster:
 
 ```bash
+uv pip install pytest pyflakes
 python -m pytest tests/ -q
+python -m pyflakes scripts/*.py tests/*.py
 ```
+
+pyflakes catches undefined names, which is the failure mode that costs the most
+here: a typo inside a rarely-taken branch surfaces only after the model has
+loaded and a sweep is minutes in.
 
 ## 7. Environment record
 

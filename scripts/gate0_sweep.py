@@ -113,8 +113,11 @@ def read_back(model, processor, images: list[Image.Image], batch: int) -> list[s
     outputs = []
     for i in range(0, len(images), batch):
         chunk = images[i:i + batch]
+        # One template for the whole chunk: the image is a placeholder that the
+        # processor expands per-image, so the rendered text is identical
+        # regardless of which strip is used to build it.
         msgs = [{"role": "user", "content": [
-            {"type": "image", "image": im}, {"type": "text", "text": prompt}]}]
+            {"type": "image", "image": chunk[0]}, {"type": "text", "text": prompt}]}]
         text = processor.apply_chat_template(msgs, tokenize=False,
                                              add_generation_prompt=True)
         inputs = processor(text=[text] * len(chunk), images=chunk,
@@ -136,6 +139,10 @@ def evaluate(model, processor, fonts: dict[str, str], height: int,
         images = [render(t, fonts[names[i % len(names)]], height)
                   for i, (t, _) in enumerate(spans)]
         preds = read_back(model, processor, images, batch)
+        # zip() would silently truncate and quietly compute accuracy over fewer
+        # items than were tested — a wrong number rather than an error.
+        assert len(preds) == len(spans), (
+            f"read_back returned {len(preds)} predictions for {len(spans)} spans")
         hits, cer_num, cer_den, by_class = 0, 0, 0, {}
         for (truth, cls), pred in zip(spans, preds):
             ok = normalise(pred) == normalise(truth)

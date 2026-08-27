@@ -92,6 +92,80 @@ class TestRendering:
                 < g0.render("a much longer span", font, 32).size[0])
 
 
+class _FakeTensor:
+    """Just enough tensor to exercise read_back's slicing."""
+
+    def __init__(self, rows: int, cols: int):
+        self.shape = (rows, cols)
+
+    def __getitem__(self, idx):
+        _, sl = idx
+        return _FakeTensor(self.shape[0], self.shape[1] - (sl.start or 0))
+
+    def to(self, _device):
+        return self
+
+
+class _FakeInputs(dict):
+    def to(self, _device):
+        return self
+
+
+class _FakeProcessor:
+    """Records what it was handed, so batching and ordering can be asserted."""
+
+    def __init__(self):
+        self.chunks: list[int] = []
+        self.counter = 0
+
+    def apply_chat_template(self, msgs, **_kw):
+        # Touching the content is what catches a NameError in the caller's
+        # message construction — the bug this class exists to prevent.
+        for part in msgs[0]["content"]:
+            assert part.get("image") is not None or part.get("text") is not None
+        return "PROMPT"
+
+    def __call__(self, text, images, **_kw):
+        assert len(text) == len(images), "one prompt per image"
+        self.chunks.append(len(images))
+        return _FakeInputs(input_ids=_FakeTensor(len(images), 7))
+
+    def batch_decode(self, new, **_kw):
+        n = new.shape[0]
+        out = [f"pred{self.counter + i}" for i in range(n)]
+        self.counter += n
+        return out
+
+
+class _FakeModel:
+    device = "cpu"
+
+    def generate(self, input_ids, **_kw):
+        return _FakeTensor(input_ids.shape[0], input_ids.shape[1] + 24)
+
+
+class TestReadBack:
+    def test_returns_one_prediction_per_image_in_order(self):
+        proc, model = _FakeProcessor(), _FakeModel()
+        images = [f"img{i}" for i in range(10)]
+        preds = g0.read_back(model, proc, images, batch=4)
+        assert preds == [f"pred{i}" for i in range(10)]
+
+    def test_respects_batch_size_including_the_short_final_chunk(self):
+        proc, model = _FakeProcessor(), _FakeModel()
+        g0.read_back(model, proc, [f"img{i}" for i in range(10)], batch=4)
+        assert proc.chunks == [4, 4, 2]
+
+    def test_handles_a_single_image(self):
+        proc, model = _FakeProcessor(), _FakeModel()
+        assert g0.read_back(model, proc, ["only"], batch=32) == ["pred0"]
+
+    def test_empty_input_makes_no_calls(self):
+        proc, model = _FakeProcessor(), _FakeModel()
+        assert g0.read_back(model, proc, [], batch=8) == []
+        assert proc.chunks == []
+
+
 class TestSelection:
     def test_picks_cheapest_passing_not_most_accurate(self):
         rows = [_row(1, 0.90, 0.80, False), _row(3, 0.96, 0.90, True),

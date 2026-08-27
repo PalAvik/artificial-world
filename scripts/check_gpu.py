@@ -117,7 +117,7 @@ def report_torch(driver: int | None) -> int:
             torch.cuda.synchronize(i)
             _ = (x @ x).sum().item()
             free, total = torch.cuda.mem_get_info(i)
-            print(f"    bf16 matmul: OK")
+            print("    bf16 matmul: OK")
             print(f"    memory:      {free / 1e9:.0f} GB free / {total / 1e9:.0f} GB total")
         except RuntimeError as exc:
             problems += 1
