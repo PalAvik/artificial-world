@@ -8,7 +8,7 @@ Run these on the server. Nothing here needs to run in the authoring container.
 nvidia-smi                      # note the GPU model AND the driver version
 nvcc --version                  # needed only if you build flash-attn from source
 python3 --version               # 3.10 or 3.11
-df -h ~/data                    # need ~200 GB free (see docs/COMPUTE.md)
+df -h .                         # need ~200 GB free (see docs/COMPUTE.md)
 ```
 
 Then, once torch is installed, always:
@@ -220,29 +220,35 @@ and adjust the commands below to match.
 ## 3. Model weights
 
 The exact repo id needs confirming (I could not reach the Hub from the authoring
-container). List what's actually published first:
+container). List what's actually published, with vision models flagged:
 
 ```bash
-python - <<'PY'
-from huggingface_hub import HfApi
-for m in HfApi().list_models(search="Qwen3-VL", sort="downloads", direction=-1, limit=25):
-    print(m.id)
-print("---")
-for m in HfApi().list_models(search="Qwen3.5-VL", sort="downloads", direction=-1, limit=25):
-    print(m.id)
-PY
+python scripts/find_model.py
 ```
+
+`pipeline_tag: image-text-to-text` means the model takes images;
+`text-generation` means it does not. That distinction is the whole point of this
+check — `Qwen/Qwen3.5-2B` is text-only and cannot host the experiment, and the
+Qwen3.5 / Qwen3-VL naming makes it easy to miss.
+
+> Note: `HfApi.list_models()` dropped the `direction` argument in
+> `huggingface_hub` 1.x, where `sort="downloads"` already returns descending.
+> The script detects this and passes `direction` only on older versions, where
+> omitting it would silently list the *least*-downloaded repos first.
 
 Then download. If a small **Qwen3.5-VL** exists, prefer it and keep Qwen3-VL-2B as the
 generational control (see PLAN.md §6.1).
 
 ```bash
-export HF_HOME=${HF_HOME:-$HOME/data/hf}   # any user-writable path
-mkdir -p "$HF_HOME"
+# Point these at scratch, not $HOME — quotas bite at ~200 GB (docs/COMPUTE.md).
+export FREEFLOW_ROOT=${FREEFLOW_ROOT:-$PWD}
+export HF_HOME="$FREEFLOW_ROOT/hf"
+export MODELS="$FREEFLOW_ROOT/models"
+mkdir -p "$HF_HOME" "$MODELS"
 
-hf download Qwen/Qwen3-VL-2B-Instruct --local-dir /data/models/Qwen3-VL-2B-Instruct
+hf download Qwen/Qwen3-VL-2B-Instruct --local-dir "$MODELS/Qwen3-VL-2B-Instruct"
 # text-only ablation baseline
-hf download Qwen/Qwen3.5-2B          --local-dir /data/models/Qwen3.5-2B
+hf download Qwen/Qwen3.5-2B           --local-dir "$MODELS/Qwen3.5-2B"
 ```
 
 (On older `huggingface_hub`, the command is `huggingface-cli download` with the same args.)
@@ -253,7 +259,7 @@ hf download Qwen/Qwen3.5-2B          --local-dir /data/models/Qwen3.5-2B
 part of why it leads.
 
 ```bash
-mkdir -p /data/datasets && cd /data/datasets
+mkdir -p "$FREEFLOW_ROOT/datasets" && cd "$FREEFLOW_ROOT/datasets"
 
 # --- Tier A: Flickr30k Entities (phrase <-> box, natively span-aligned)
 git clone https://github.com/BryanPlummer/flickr30k_entities.git
@@ -297,7 +303,7 @@ hidden states are reachable, and reports peak memory so `docs/COMPUTE.md` estima
 be corrected with real numbers.
 
 ```bash
-python scripts/smoke_test.py --model /data/models/Qwen3-VL-2B-Instruct
+python scripts/smoke_test.py --model "$MODELS/Qwen3-VL-2B-Instruct"
 ```
 
 Expected: both views produce logits, hidden states come back with the layer count the
