@@ -30,7 +30,9 @@ So Gate 0 is a constrained minimisation: **find the render config with the fewes
 visual tokens that still clears the read-back thresholds.** Sweep font size, strip
 height and `min_pixels` jointly; the smoke test reports visual-token count per config.
 
-**Metric:** exact-match read-back accuracy.
+**Run it with:** `python scripts/gate0_sweep.py --model <base-model>`
+
+**Metric:** exact-match read-back accuracy, case- and wrapping-punctuation-insensitive.
 
 | Outcome | Threshold | Action |
 |---|---|---|

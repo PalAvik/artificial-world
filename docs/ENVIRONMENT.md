@@ -371,6 +371,42 @@ Expected: both views produce logits, hidden states come back with the layer coun
 config advertises, peak memory well under 80 GB, and a wall-clock number for a single
 forward pass at batch 8.
 
+## 6a. Gate 0 — the render-config sweep
+
+With the environment green, Gate 0 is one command:
+
+```bash
+python scripts/gate0_sweep.py --model Qwen/Qwen3.5-2B --quick   # shake out the pipeline
+python scripts/gate0_sweep.py --model Qwen/Qwen3.5-2B           # the real sweep
+```
+
+It sweeps strip height x `min_pixels`, measures read-back accuracy for 1-word and
+3-word spans across the training fonts, and picks the **cheapest config in visual
+tokens that still clears >=95% / >=88%** — the constrained minimisation in
+`docs/GATES.md`, not a pass/fail on a fixed config.
+
+Three things it does deliberately:
+
+- **Selects on training fonts only.** Held-out fonts are measured and printed, never
+  selected on; choosing a config because it suited a held-out font would contaminate
+  the split Gate 2 depends on. It warns if held-out accuracy trails train accuracy
+  badly, which means the config is overfit to the training typefaces.
+- **Breaks accuracy down by word class** — function, concrete, abstract, rare/long.
+  That is a free preview of H2, and a function-word deficit visible at Gate 0 is
+  worth knowing before Phase 1.
+- **Writes `configs/render.yaml` and freezes it.** Commit that file. Changing it
+  later invalidates every measurement taken before the change.
+
+Nothing passes? The script says so, prints the best accuracy achieved, and names the
+branch — CONDITIONAL (one wider sweep) or DROP. Record the call in
+`results/DECISIONS.md` the same day, per `docs/GATES.md`.
+
+Run the CPU tests any time without a GPU:
+
+```bash
+python -m pytest tests/ -q
+```
+
 ## 7. Environment record
 
 Capture the exact environment once it works, so a result three weeks from now is
