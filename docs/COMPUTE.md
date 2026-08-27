@@ -2,7 +2,7 @@
 
 ## The headline: compute is not your binding constraint
 
-Ten weeks on one A100 is ~1,680 GPU-hours. The plan below spends **~210**. At 2B
+Ten weeks on one A100 is ~1,680 GPU-hours. The plan below spends **~190**. At 2B
 parameters with a frozen vision tower, the GPU sits idle most of the time.
 
 The scarce resources are **engineering time** and **the number of distinct ideas you can
@@ -15,11 +15,11 @@ open-ended exploration.
 | Phase | Work | GPU-hours | Wall clock |
 |---|---|---|---|
 | 0 | Gate 0 render read-back check | ~1 | Week 1 |
-| 1 | Full metric sweep, incl. dev iteration | ~30 | Weeks 2–3 |
+| 1 | Full metric sweep, incl. dev iteration | ~10 | Weeks 2–3 |
 | 2 | 6 LoRA runs + 3 seeds + 1 full-FT confirm | ~90 | Weeks 4–7 |
 | 3 | H5 downstream, cycle metrics, re-runs | ~60 | Weeks 8–10 |
 | — | Slack for failed runs | ~30 | — |
-| | **Total** | **~210** | 10 weeks |
+| | **Total** | **~190** | 10 weeks |
 
 ## Four decisions that make this fit comfortably
 
@@ -76,29 +76,49 @@ column is the one that matters: the cardinality gap is the asymmetry the
 merge-position design works around (`PLAN.md` §1.1), and it is now nearly closed by
 construction rather than by argument.
 
-### Unresolved: throughput is still overhead-bound
+### Measured throughput — A100 80GB (the reference machine)
 
-190 ms at bs=1 and 203 ms at bs=8 — eight times the work for 7% more time. That is
-Python and kernel-launch overhead, not the GPU. A 2.2 B model doing a 25-token forward
-on a B200 should be roughly two orders of magnitude faster than this, so **do not
-record 984 tok/s as a throughput figure**; it is a measurement of dispatch cost.
+`seq=512`, bf16, `flash_attention_2`, `TORCH_DISABLE_NATIVE_JIT=1`:
 
-Planning consequence, and it is a large one. Phase 1 is ~35k items × 4 views ≈ 140k
-forwards:
+| batch | ms/step | tok/s | GB | vs bs=1 | marginal |
+|---|---|---|---|---|---|
+| 1 | 162.7 | 3,147 | 4.8 | 1.0× | — |
+| 4 | 164.4 | 12,459 | 5.6 | 4.0× | 4× work in **1.01× the time** — free |
+| 16 | 408.6 | 20,050 | 9.0 | 6.4× | 4× work in 2.49× the time — 1.61× |
+| 64 | 1474.3 | 22,226 | 22.5 | 7.1× | 4× work in 3.61× the time — 1.11× |
 
-- looping one item at a time at ~200 ms → **~8 hours**
-- properly batched at a realistic sequence length → **well under an hour**
+**The knee is at bs≈16.** Below bs=4 the GPU is almost entirely idle — quadrupling the
+batch costs 1% more wall clock. Past bs=16 time grows nearly linearly with work, which
+is what compute-bound looks like. bs=64 buys 11% more throughput for 2.5× the memory.
 
-So the Phase 1 sweep **must batch**, and must never loop item by item. Find the real
-number before trusting any GPU-hour estimate here:
+**Operating point: bs=32 for inference sweeps** — near-peak throughput with memory to
+spare on an 80 GB card. Never run the Phase 1 sweep at bs=1: it would be ~7× slower
+than necessary for identical results.
 
-```bash
-python scripts/smoke_test.py --model Qwen/Qwen3.5-2B --min-pixels 1024 --bench
-```
+### The A100 is *faster* than the B200 here
 
-That sweeps batch size at seq=512 and prints scaling against bs=1. Where the `vs bs=1`
-column stops rising is where the GPU is actually busy; run the Phase 1 sweep at or
-above that batch size.
+| | A100 | B200 |
+|---|---|---|
+| bs=1, seq=25 | **126 ms** | 190 ms |
+| bs=8, short seq | **1,559 tok/s** | 984 tok/s |
+
+Not a measurement error — it is what dispatch-bound work looks like. At 2 B parameters
+and short sequences the bottleneck is host-side launch cost, and the B200's extra
+compute buys nothing it can use. So naming the A100 the reference machine costs this
+project no speed at all; on this workload it is the better card as well as the stable
+one.
+
+### Revised phase estimates
+
+Phase 1 is ~35k items × 4 views ≈ 140k forwards. At ~20k tok/s and ~256 tokens per
+item, that is **~0.5 h of pure compute** — not the 30 GPU-hours first budgeted, which
+assumed unbatched throughput. Raising the allowance to ~10 h for dev iteration and
+re-runs still cuts the phase by two thirds.
+
+Phase 2's estimate survives contact with the data. Training is roughly 3× a forward
+(forward + backward), and the ISO objective runs two views, so ~6× — implying
+~3.3k tok/s, against the 3.5k first assumed. With gradient checkpointing, expect
+4–6 h per 50M-token run. **No change to the Phase 2 or Phase 3 budgets.**
 
 ## Throughput and memory (estimates — measure on day one and correct these)
 

@@ -611,8 +611,8 @@ footer {
     <p class="subtitle">Meaning carried by content, not by modality.</p>
     <dl class="meta-strip">
       <div><dt>Hardware</dt><dd>1 × A100 80GB</dd></div>
-      <div><dt>Base model</dt><dd>Qwen3-VL-2B</dd></div>
-      <div><dt>Budget</dt><dd>~210 GPU-h</dd></div>
+      <div><dt>Base model</dt><dd>Qwen3.5-2B</dd></div>
+      <div><dt>Budget</dt><dd>~190 GPU-h</dd></div>
       <div><dt>First gate</dt><dd>Sep 2</dd></div>
       <div><dt>Ends</dt><dd>Nov 4</dd></div>
     </dl>
@@ -920,7 +920,7 @@ footer {
             <td>&lt;80% after one config sweep → Tier B cannot lead. Re-plan around Tier A, or <span class="drop">drop</span>.</td>
           </tr>
           <tr>
-            <td><strong>1</strong> Does the gap exist?<span class="due">due Sep 16 · ~30 GPU-h</span></td>
+            <td><strong>1</strong> Does the gap exist?<span class="due">due Sep 16 · ~10 GPU-h</span></td>
             <td>MSG ≥ 1.5 with CI lower bound &gt; 1.25 on ≥2 tiers, <em>and</em> accuracy delta ≥ 5 pts</td>
             <td>CI upper &lt; 1.25 everywhere and delta &lt; 2 pts → <span class="drop">DROP</span>. No target to train toward. Marginal 1.25–1.5 buys exactly one week, never two.</td>
           </tr>
@@ -1031,7 +1031,7 @@ footer {
         <span class="marker"><span class="pnum">1</span><span class="weeks">Weeks 2–3</span></span>
         <div>
           <h3>Measure</h3>
-          <p>Full metric suite against off-the-shelf Qwen3-VL-2B. Inference only, ~30 GPU-hours including dev iteration. Tests H1 through H3.</p>
+          <p>Full metric suite against the base model. Inference only, ~10 GPU-hours including dev iteration — measured at 20k tok/s batched, the sweep itself is under an hour. Tests H1 through H3.</p>
           <p class="exit"><b>Exit</b>The modality-substitution-gap study, per tier and per word class. <strong>The first real go/no-go, with an explicit drop branch.</strong><span class="gate-badge">Gate 1</span></p>
         </div>
       </div>
@@ -1077,7 +1077,7 @@ footer {
       </ul>
 
       <h3>Compute</h3>
-      <p>Ten weeks on one A100 is roughly 1,680 GPU-hours. The plan spends about 210. At 2B parameters with a frozen vision tower, the GPU sits idle most of the time — <strong>compute is not the binding constraint here</strong>, engineering time is, and so is the number of distinct ideas testable before the clock runs out. That is why the gates are strict about decisions rather than about compute.</p>
+      <p>Ten weeks on one A100 is roughly 1,680 GPU-hours. The plan spends about 190. At 2B parameters with a frozen vision tower, the GPU sits idle most of the time — <strong>compute is not the binding constraint here</strong>, engineering time is, and so is the number of distinct ideas testable before the clock runs out. That is why the gates are strict about decisions rather than about compute.</p>
       <p>Four choices make it fit comfortably: freeze the vision tower and cache image features once, so the encoder leaves the training loop entirely; render spans as narrow strips rather than square canvases, costing ~25 visual tokens instead of several hundred; LoRA for every ablation with a single full fine-tune to confirm; and a hard 50M-token cap per run, on the principle that a run needing more than six hours to show signal has the wrong config.</p>
 
       <h3>Risks</h3>

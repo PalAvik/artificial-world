@@ -4,7 +4,8 @@
 
 | Date | Run ID | Phase | Config | Arch | torch | Attn | JIT | Tokens | MSG (held-out) | Probe acc | Bench retention | GPU-h | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| | | | | | | | | | | | | | |
+| 2026-08-27 | smoke-b200 | 0 | smoke, min_pixels=1024 | B200 | 2.13.0+cu130 | fa2 | off | — | — | — | — | ~0 | 3 visual tokens; overhead-bound |
+| 2026-08-27 | smoke-a100 | 0 | smoke + bench, seq=512 | A100 | 2.13.0+cu130 | fa2 | off | — | — | — | — | ~0 | knee at bs≈16; 20k tok/s |
 
 Arch / torch / attention backend are not bookkeeping: runs compared against each
 other must match on all three. See the hardware policy in `docs/GATES.md`.

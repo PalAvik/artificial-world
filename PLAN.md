@@ -351,7 +351,7 @@ splits now and never revisit them. CPU-only apart from the Gate 0 check.
 **Gate 0** passed (~1 GPU-hour).
 
 **Phase 1 — Measure (weeks 2–3).** Full metric suite against off-the-shelf Qwen3-VL-2B.
-Inference only, ~30 GPU-hours including dev iteration. Tests H1–H3.
+Inference only, ~10 GPU-hours including dev iteration (measured: the sweep itself is under an hour when batched at bs=32). Tests H1–H3.
 *Exit:* the modality-substitution-gap study, per-tier and per-word-class. **Gate 1 —
 the first real go/no-go, with an explicit DROP branch.**
 
