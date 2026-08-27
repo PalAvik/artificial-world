@@ -529,6 +529,32 @@ tr:last-child td { border-bottom: 0; }
 }
 .phase--gate .pnum { color: var(--mode-t); }
 
+/* ---------- gates ---------- */
+
+.gates { margin: 28px 0; max-width: var(--wide); overflow-x: auto; }
+.gates table { min-width: 640px; }
+.gates td:first-child { font-family: var(--f-body); font-size: 14.5px; padding-right: 20px; white-space: nowrap; }
+.gates .due {
+  font-family: var(--f-mono);
+  font-size: 12px;
+  color: var(--faint);
+  display: block;
+  font-variant-numeric: tabular-nums;
+}
+.gates .drop { color: var(--warn); font-weight: 600; }
+.gate-badge {
+  display: inline-block;
+  font-family: var(--f-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border: 1px solid var(--warn);
+  color: var(--warn);
+  margin-left: 8px;
+  vertical-align: 1px;
+}
+
 /* ---------- questions ---------- */
 
 .questions { margin: 28px 0 0; max-width: var(--measure); counter-reset: q; }
@@ -580,14 +606,15 @@ footer {
 <div class="page">
 
   <header class="masthead">
-    <p class="eyebrow">Research plan · v0.1 · August 2026</p>
+    <p class="eyebrow">Research plan · v0.2 · August 2026</p>
     <h1>FreeFlow</h1>
     <p class="subtitle">Meaning carried by content, not by modality.</p>
     <dl class="meta-strip">
-      <div><dt>Base model</dt><dd>~2B VLM</dd></div>
-      <div><dt>Horizon</dt><dd>10 weeks</dd></div>
-      <div><dt>First gate</dt><dd>Week 3</dd></div>
-      <div><dt>Repo</dt><dd>artificial-world</dd></div>
+      <div><dt>Hardware</dt><dd>1 × A100 80GB</dd></div>
+      <div><dt>Base model</dt><dd>Qwen3-VL-2B</dd></div>
+      <div><dt>Budget</dt><dd>~210 GPU-h</dd></div>
+      <div><dt>First gate</dt><dd>Sep 2</dd></div>
+      <div><dt>Ends</dt><dd>Nov 4</dd></div>
     </dl>
   </header>
 
@@ -866,11 +893,55 @@ footer {
     <div class="kill">
       <span class="label">Kill criteria — written before any results exist</span>
       <ul>
-        <li><strong>H1 fails</strong> (gap already ≈ 1 everywhere): the phenomenon doesn't exist at this scale. Pivot to the generation half, or to larger models where it may be scale-dependent.</li>
-        <li><strong>H3 fails badly</strong> and H4 shows invariance rising only as probe decodability falls: the objective is buying invariance by destroying information. Stop and redesign around the generation loss as the primary anchor.</li>
+        <li><strong>H1 fails</strong> (gap already ≈ 1 everywhere): the phenomenon doesn't exist at this scale. The training program has no target to aim at — <strong>drop, don't proceed</strong>.</li>
+        <li><strong>H3 fails badly</strong> and H4 shows invariance rising only as probe decodability falls: the objective is buying invariance by destroying information. One redesign, then stop.</li>
         <li><strong>H4 succeeds but H5 fails</strong>: a negative result, still publishable as a measurement paper. Write it as the measurement paper it is — don't oversell it as world-model progress.</li>
       </ul>
     </div>
+
+    <div class="col">
+      <h3>Made operational: four dated gates</h3>
+      <p>Each gate has a date, a number, and a decision. The decision is made on the date with the numbers that exist on that date — not a week later, and not after "one more run".</p>
+    </div>
+
+    <div class="gates">
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Gate</th>
+            <th scope="col">Pass threshold</th>
+            <th scope="col">Failure branch</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>0</strong> Render legibility<span class="due">due Sep 2 · ~1 GPU-h</span></td>
+            <td>≥95% read-back on single words, ≥88% on three-word spans</td>
+            <td>&lt;80% after one config sweep → Tier B cannot lead. Re-plan around Tier A, or <span class="drop">drop</span>.</td>
+          </tr>
+          <tr>
+            <td><strong>1</strong> Does the gap exist?<span class="due">due Sep 16 · ~30 GPU-h</span></td>
+            <td>MSG ≥ 1.5 with CI lower bound &gt; 1.25 on ≥2 tiers, <em>and</em> accuracy delta ≥ 5 pts</td>
+            <td>CI upper &lt; 1.25 everywhere and delta &lt; 2 pts → <span class="drop">DROP</span>. No target to train toward. Marginal 1.25–1.5 buys exactly one week, never two.</td>
+          </tr>
+          <tr>
+            <td><strong>2</strong> Trainable, and real?<span class="due">due Oct 14 · ~90 GPU-h</span></td>
+            <td>MSG −40%, probe within 5 pts, benchmarks within 2 pts, <em>and</em> augmentation-only ablation &lt; 50% of the effect</td>
+            <td>Augmentation matches the objective → <span class="drop">drop the method claim</span>, publish Phase 1 alone. Collapse twice → drop.</td>
+          </tr>
+          <tr>
+            <td><strong>3</strong> Does it buy anything?<span class="due">due Nov 4 · ~60 GPU-h</span></td>
+            <td>≥3 pts on held-out relational composition, 3 seeds, non-overlapping bars</td>
+            <td>Downgrade, not drop: measurement + method paper with the negative H5 stated plainly.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="col">
+      <p><strong>Any two gate failures ends the project.</strong> A phase overrunning its wall clock by more than 50% is cut, not extended. Every gate decision gets written down on its date — a gate silently rolled forward has failed at its only job. And no new run starts until the previous run's row is filled in the run log.</p>
+    </div>
+
   </section>
 
   <section>
@@ -942,13 +1013,17 @@ footer {
       <h2>Phases</h2>
     </div>
 
+    <div class="col" style="margin-bottom:26px">
+      <p><strong>One scope decision forced by the hardware:</strong> pixel-level image generation is out of scope for v1. On a single A100 in ten weeks, a generative decoder trained to publication quality is not achievable, and chasing it is the most likely way to finish with nothing. The anti-collapse anchor becomes <strong>feature-space reconstruction</strong> — predicting the frozen vision encoder's features for the swapped span — which gives the same structural guarantee at a fraction of the cost. The <span class="mono">T→I→T</span> cycle still runs in full, since read-back needs no generation. Pixel reconstruction is future work, where the hardware says it belongs.</p>
+    </div>
+
     <div class="phases">
       <div class="phase">
         <span class="marker"><span class="pnum">0</span><span class="weeks">Week 1</span></span>
         <div>
           <h3>Instrument</h3>
-          <p>Substitution corpus builder: glyph renderer with controlled font, size, background and noise; span aligner for Flickr30k Entities and Visual Genome; paraphrase and re-render generators for the MSG denominator. CPU-only and testable without a GPU.</p>
-          <p class="exit"><b>Exit</b>Corpus builder produces all three tiers with paired views, unit-tested.</p>
+          <p>Substitution corpus builder: glyph renderer with controlled font, size, background and noise; span aligner for Flickr30k Entities and Visual Genome; paraphrase and re-render generators for the MSG denominator. Fix the held-out splits now and never revisit them. CPU-only apart from the gate check.</p>
+          <p class="exit"><b>Exit</b>All three tiers producing paired views, unit-tested.<span class="gate-badge">Gate 0</span></p>
         </div>
       </div>
 
@@ -956,43 +1031,41 @@ footer {
         <span class="marker"><span class="pnum">1</span><span class="weeks">Weeks 2–3</span></span>
         <div>
           <h3>Measure</h3>
-          <p>Full metric suite against an off-the-shelf 2B VLM. Inference only — one H100 or A100 is enough. Tests H1 through H3.</p>
-          <p class="exit"><b>Exit</b>The modality-substitution-gap study, with per-tier and per-word-class breakdowns. <strong>Standalone workshop paper and the first real go/no-go.</strong></p>
+          <p>Full metric suite against off-the-shelf Qwen3-VL-2B. Inference only, ~30 GPU-hours including dev iteration. Tests H1 through H3.</p>
+          <p class="exit"><b>Exit</b>The modality-substitution-gap study, per tier and per word class. <strong>The first real go/no-go, with an explicit drop branch.</strong><span class="gate-badge">Gate 1</span></p>
         </div>
       </div>
 
       <div class="phase">
-        <span class="marker"><span class="pnum">2</span><span class="weeks">Weeks 4–6</span></span>
+        <span class="marker"><span class="pnum">2</span><span class="weeks">Weeks 4–7</span></span>
         <div>
           <h3>Train for invariance</h3>
-          <p>ISO objective, LoRA then full fine-tune, understanding side only. Full ablation table. Frontier plot logged at every checkpoint.</p>
-          <p class="exit"><b>Exit</b>H4 answered; frontier plot with baseline and trained points.</p>
+          <p>ISO objective. LoRA for all six configs, one full fine-tune to confirm the winner isn't a LoRA artifact. ~90 GPU-hours. Frontier plot logged at every eval step, not reconstructed afterwards.</p>
+          <p><strong>Run the augmentation-only ablation in week 5, not week 7.</strong> It is the single most likely way this project produces a result that looks good and means nothing, and finding that out with two weeks left is very different from finding it out with none.</p>
+          <p class="exit"><b>Exit</b>H4 answered, and a gate whose fourth condition can drop the method claim outright.<span class="gate-badge">Gate 2</span></p>
         </div>
       </div>
 
       <div class="phase">
-        <span class="marker"><span class="pnum">3</span><span class="weeks">Weeks 7–10</span></span>
+        <span class="marker"><span class="pnum">3</span><span class="weeks">Weeks 8–10</span></span>
         <div>
-          <h3>Close the cycle</h3>
-          <p>Add generation. Rate–distortion curves in both directions. Test H5 on held-out relational composition.</p>
-          <p class="exit"><b>Exit</b>Full paper draft.</p>
-        </div>
-      </div>
-
-      <div class="phase">
-        <span class="marker"><span class="pnum">4</span><span class="weeks">After</span></span>
-        <div>
-          <h3>Scale and write</h3>
-          <p>One scale point up to show the trend, or a second model family to show it isn't Qwen-specific. Reviewers will ask for one of the two.</p>
+          <h3>Downstream and cycles</h3>
+          <p>H5 on held-out relational composition, 3 seeds against a matched-compute baseline. <span class="mono">T→I→T</span> read-back in full; <span class="mono">I→T→I</span> in feature space, as rate–distortion curves. Paper drafting runs in parallel from week 8, not after.</p>
+          <p class="exit"><b>Exit</b>Pass gives the full world-model claim; fail downgrades to measurement-plus-method with an explicitly negative H5.<span class="gate-badge">Gate 3</span></p>
         </div>
       </div>
     </div>
+
+    <div class="col">
+      <p><strong>Scale-up is not in the ten weeks.</strong> One A100 cannot deliver an 8B scale point on top of the above. If reviewers demand one it is a post-submission run on borrowed hardware — so write the paper such that no claim depends on it.</p>
+    </div>
+
   </section>
 
   <section>
     <div class="sec-head">
       <span class="sec-num">07</span>
-      <h2>Base model, and one correction</h2>
+      <h2>Base model, compute, risks</h2>
     </div>
     <div class="col">
       <p><code>Qwen/Qwen3.5-2B</code> — released March 2026 — is a <strong>text-only</strong> LLM. It has no vision encoder, so it cannot host this experiment as written. The Qwen3.5 small line is 0.8B / 2B / 4B / 9B, all text.</p>
@@ -1002,6 +1075,10 @@ footer {
         <li><strong>Keep <code>Qwen3.5-2B</code> as the text-only ablation.</strong> Genuinely useful for isolating what the vision tower contributes versus what the LM already does with rendered text descriptions.</li>
         <li><strong>Phase 3</strong> needs either a discrete visual tokenizer and decoder bolted onto the VLM, or a unified any-to-any base. Decide at the Phase 2/3 boundary with Phase 1 data in hand — don't pre-commit.</li>
       </ul>
+
+      <h3>Compute</h3>
+      <p>Ten weeks on one A100 is roughly 1,680 GPU-hours. The plan spends about 210. At 2B parameters with a frozen vision tower, the GPU sits idle most of the time — <strong>compute is not the binding constraint here</strong>, engineering time is, and so is the number of distinct ideas testable before the clock runs out. That is why the gates are strict about decisions rather than about compute.</p>
+      <p>Four choices make it fit comfortably: freeze the vision tower and cache image features once, so the encoder leaves the training loop entirely; render spans as narrow strips rather than square canvases, costing ~25 visual tokens instead of several hundred; LoRA for every ablation with a single full fine-tune to confirm; and a hard 50M-token cap per run, on the principle that a run needing more than six hours to show signal has the wrong config.</p>
 
       <h3>Risks</h3>
       <ul>
@@ -1022,33 +1099,27 @@ footer {
     <div class="questions">
       <div class="question">
         <div>
-          <h3>What hardware, and for how long?</h3>
-          <p>Phase 1 needs one GPU for inference. Phase 2 wants four to eight for a decent ablation sweep.</p>
+          <h3>Would you ship Phase 1 alone if Gate 2 fails?</h3>
+          <p>Deciding yes now is what makes the kill criteria real rather than decorative.</p>
         </div>
       </div>
       <div class="question">
         <div>
-          <h3>Bolt a decoder on, or switch bases at Phase 3?</h3>
-          <p>Best decided with Phase 1 data — but a standing preference changes what Phase 0 builds.</p>
+          <h3>Do you accept the pixel-generation descope?</h3>
+          <p>It's the right call for one A100 in ten weeks, but it means v1 has no image-generation result. If that's unacceptable for the venue you're targeting, the honest alternative is a longer timeline, not a compressed one.</p>
         </div>
       </div>
       <div class="question">
         <div>
           <h3>Which deadline?</h3>
-          <p>It determines whether Phase 1 ships as its own workshop paper or folds into the main submission.</p>
-        </div>
-      </div>
-      <div class="question">
-        <div>
-          <h3>Would you ship Phase 1 alone if H4 fails?</h3>
-          <p>Deciding yes now is what makes the kill criteria real rather than decorative.</p>
+          <p>It determines whether the Gate 1 measurement study ships as its own workshop paper or folds into the main submission — and the ten-week clock above assumes it starts now.</p>
         </div>
       </div>
     </div>
   </section>
 
   <footer>
-    <span>FreeFlow · research plan v0.1</span>
+    <span>FreeFlow · research plan v0.2 · 1 × A100</span>
     <span>branch: claude/multimodal-token-equivalence-h400oh</span>
     <span>source of truth: PLAN.md</span>
   </footer>
