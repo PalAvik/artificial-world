@@ -34,28 +34,33 @@ can fix it.
 | H100 | `sm_90` | CUDA 11.8+ |
 | **B200** | **`sm_100`** | **CUDA 12.8+ (driver 570+); `cu124` builds will never work** |
 
-A `cu124` torch build stops at `sm_90`. To cover B200, move the whole project to
-a newer build — one environment can serve both A100 and B200, since CUDA 12.8+
-and 13.x still include `sm_80`:
+A `cu124` torch build stops at `sm_90`, which is why `torch==2.5.1+cu124` fails on
+B200 with *"no kernel image is available for execution on the device"*. One
+environment can serve both machines, because CUDA 13.x still includes `sm_80`.
+
+**On this cluster (driver 610.43.02), the default PyPI wheel is the answer:**
 
 ```bash
-# check the driver first — this decides which option applies
-nvidia-smi --query-gpu=driver_version --format=csv,noheader
+uv pip install --force-reinstall torch torchvision   # 2.13.0+cu130 at time of writing
+uv pip uninstall flash-attn                          # the cu124 wheel can't import here
 ```
 
-- **Driver ≥ 580** — take the default PyPI wheel, which currently bundles CUDA 13:
-  ```bash
-  uv pip install --upgrade torch torchvision
-  ```
-- **Driver 570–579** — CUDA 13 needs 580+, so pin the cu128 channel instead:
-  ```bash
-  uv pip install --force-reinstall torch torchvision \
-      --index-url https://download.pytorch.org/whl/cu128
-  ```
-- **Driver < 570** — B200 is unusable regardless of torch. Stay on the A100 and
-  ask the cluster admins about the driver.
+Confirmed arch coverage for `2.13.0+cu130`:
 
-Verify, don't assume — the arch list is the ground truth:
+```
+arch list: sm_75 sm_80 sm_86 sm_90 sm_100 sm_120
+  sm_80  (A100): YES        sm_100 (B200): YES
+```
+
+If the driver is ever older on another node:
+
+- **580+** — as above, default PyPI wheel (CUDA 13).
+- **570–579** — CUDA 13 needs 580+, so pin cu128:
+  `uv pip install --force-reinstall torch torchvision --index-url https://download.pytorch.org/whl/cu128`
+- **< 570** — B200 unusable whatever you install; that is an admin conversation.
+
+Verify, don't assume — the arch list is the ground truth, and it reads the
+compile-time constant so it works even on a node with no GPU attached:
 
 ```bash
 python -c "import torch; print(torch.cuda.get_arch_list())"   # must contain sm_100
@@ -65,11 +70,12 @@ python scripts/check_gpu.py
 ### What upgrading torch breaks
 
 - **flash-attn.** The `+cu124torch2.5` wheel is built against that exact stack and
-  will fail to import after an upgrade. Reinstall a wheel matching the new
-  torch/CUDA pair, or drop it: `attn_implementation="sdpa"` costs ~15%, works on
-  every architecture, and PyTorch's own fused backends reach new hardware sooner
-  than flash-attn wheels do. **On B200, start with sdpa** and only add flash-attn
-  once the rest of the pipeline is green.
+  will not import after the upgrade — uninstall it. `attn_implementation="sdpa"`
+  is the default for this project now: it works on every architecture, needs no
+  wheel matching, and costs ~15%. PyTorch's own fused backends also reach new
+  hardware sooner than flash-attn wheels do. Add flash-attn later as a pure
+  speedup, if at all — and if you do, it becomes part of the run's identity
+  under the hardware policy, so don't compare a flash-attn run against an sdpa one.
 - **bitsandbytes 8-bit optimizers** may lag on `sm_100`. It doesn't matter there —
   B200's 180 GB makes plain fp32 AdamW affordable. Keep 8-bit for the A100.
 
@@ -111,8 +117,11 @@ cd /path/to/artificial-world
 uv venv --python 3.11 .venv
 source .venv/bin/activate
 
-# PyTorch, CUDA 12.4 build
-uv pip install torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cu124
+# PyTorch. The default PyPI wheel is CUDA-enabled and covers every architecture
+# in this project — verified arch list for 2.13.0+cu130:
+#   sm_75 sm_80 sm_86 sm_90 sm_100 sm_120   (A100 = sm_80, B200 = sm_100)
+# Needs driver 580+. If yours is older, see §1a.
+uv pip install torch torchvision
 
 # Core stack
 uv pip install "transformers>=4.57.0" accelerate peft datasets \
@@ -123,16 +132,19 @@ uv pip install "transformers>=4.57.0" accelerate peft datasets \
 # Qwen-VL image preprocessing helpers
 uv pip install qwen-vl-utils
 
-# FlashAttention-2 (Ampere-supported). Prefer a prebuilt wheel over the ~10 min
-# source build — this one matches the pinned stack exactly (cu124 / torch2.5 / cp311):
-uv pip install https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.5.4/flash_attn-2.8.3+cu124torch2.5-cp311-cp311-linux_x86_64.whl
-
-# If no wheel matches your stack, either build from source
-# (uv pip install flash-attn --no-build-isolation) or skip it and use
-# attn_implementation="sdpa" — it costs ~15% and is not worth fighting over.
+# FlashAttention: OPTIONAL. Start without it.
+# attn_implementation="sdpa" works on every architecture here, needs no wheel
+# hunting, and costs ~15%. Get the pipeline green first, then consider adding
+# flash-attn as a speedup — only with a wheel matching your exact torch/CUDA
+# pair, or a source build (uv pip install flash-attn --no-build-isolation).
+#
+# A prebuilt +cu124torch2.5 wheel will NOT import against the torch above.
+# If one is already installed from an earlier attempt, remove it:
+#   uv pip uninstall flash-attn
 ```
 
-Verify it loaded against the GPU, not merely installed:
+If you do install flash-attn, verify it loaded against the GPU rather than merely
+installing:
 
 ```bash
 python - <<'PYCHK'
@@ -143,15 +155,15 @@ print("flash-attn", flash_attn.__version__, "->", tuple(flash_attn_func(q, q, q)
 PYCHK
 ```
 
-The real test is `scripts/smoke_test.py` (§6), which loads the model with
-`attn_implementation="flash_attention_2"` and fails loudly if the backend is unusable.
+Then pass `--attn flash_attention_2` to `scripts/smoke_test.py` (§6) to confirm the
+model actually loads with it; the script defaults to `sdpa`.
 
 <details>
 <summary>conda equivalent</summary>
 
 ```bash
 conda create -n freeflow python=3.11 -y && conda activate freeflow
-pip install torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cu124
+pip install torch torchvision
 pip install "transformers>=4.57.0" accelerate peft datasets numpy scipy scikit-learn \
             pandas matplotlib pillow einops sentencepiece protobuf bitsandbytes \
             "huggingface_hub[cli]" wandb pyyaml tqdm qwen-vl-utils
@@ -297,7 +309,7 @@ reproducible:
 
 ```bash
 uv pip freeze > configs/requirements.lock.txt
-python -c "import torch;print(torch.__version__, torch.version.cuda, torch.cuda.get_device_name(0))" \
+python -c "import torch;print(torch.__version__, torch.version.cuda, torch.cuda.get_arch_list(), torch.cuda.get_device_name(0))" \
     >> configs/requirements.lock.txt
 nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv >> configs/requirements.lock.txt
 git add configs/requirements.lock.txt && git commit -m "Lock environment"

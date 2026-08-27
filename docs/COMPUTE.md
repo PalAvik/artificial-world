@@ -57,16 +57,39 @@ Full-FT memory math (2B params): bf16 weights 4.4 GB + bf16 grads 4.4 GB + fp32 
 states 17.6 GB + fp32 master 8.8 GB ≈ 35 GB before activations. 8-bit AdamW drops the
 optimizer states to ~4.4 GB. Both fit; use 8-bit unless it destabilises.
 
-**A100 is Ampere:** bf16 and FlashAttention-2 yes; FP8 and FlashAttention-3 no (Hopper
-only). If the flash-attn build fails, `attn_implementation="sdpa"` costs perhaps 15%
-and is not worth fighting over.
+**Attention backend: sdpa by default.** It works on both A100 (`sm_80`) and B200
+(`sm_100`) with no wheel matching, and costs ~15% against FlashAttention-2. Given
+that the throughput numbers below are estimates to be replaced by measurement
+anyway, that 15% is not worth a toolchain fight. Add flash-attn later as a pure
+speedup if it proves worthwhile — but it becomes part of a run's identity under the
+hardware policy, so never compare a flash-attn run against an sdpa one.
+
+**A100 is Ampere:** bf16 yes; FP8 and FlashAttention-3 no (Hopper and later only).
+
+## B200 and MIG: opportunistic only
+
+B200 access here is intermittent, A100 access is reliable, so **the A100 is the
+reference machine and every gated number comes from it** (`docs/GATES.md`, hardware
+policy). That is not a limitation to work around — at 2B parameters with a frozen
+vision tower the A100 is not the bottleneck, and a stable machine is worth more to
+this project than a fast one.
+
+Use the other hardware for work that is never compared against A100 runs:
+
+| Hardware | Good for | Not for |
+|---|---|---|
+| B200, when available | Hyperparameter search for λ weights; the optional 8B scale point (as its own self-contained comparison, baseline included) | Any run in the Gate 2 ablation table |
+| MIG slices | Phase 1 sweeps and independent ablations run concurrently — several slices, several jobs | Making one run faster; they can't |
+
+If a B200 result ever needs to enter the paper, port its **baseline** to B200 too and
+report the pair. A ported run without a ported baseline is not a result.
 
 ## Training config to start from
 
 ```yaml
 model:            Qwen3-VL-2B          # freeze vision tower + train merger & LM
 precision:        bfloat16
-attn:             flash_attention_2    # fallback: sdpa
+attn:             sdpa                 # every arch, no wheel matching; ~15% vs FA2
 grad_checkpoint:  true
 lora:             {r: 32, alpha: 64, dropout: 0.05, targets: [q,k,v,o,gate,up,down]}
 max_seq_len:      512                  # text view ~256, image view ~320
