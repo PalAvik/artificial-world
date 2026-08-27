@@ -177,6 +177,106 @@ functional delta is not yet measured.
 **Gate 1 still cannot be called.** Tier B has a strong MSG and no valid delta;
 Tier C is invalid; Tier A has not run.
 
+**2026-08-27, third run — the instrument works. The result is not the one the
+gate was written for.**
+
+| tier | MSG | 95% CI | forced choice: text / image | span-free floor | read-back |
+|---|---|---|---|---|---|
+| B | **3.023** | [2.953, 3.096] | 0.941 / **1.000** | **0.449** | 0.991 |
+| C | 4.052 | [3.981, 4.127] | 0.992 / **0.477** | 0.516 | n/a |
+
+n=2000 per tier for MSG, 256 for the forced choice. A100, Qwen3.5-2B, fa2,
+`TORCH_DISABLE_NATIVE_JIT=1`. Tier A not run.
+
+**The span-free floor settles what two earlier runs could not.** With the span
+blanked in both modalities, Tier B scores 0.449 — the choice is *not* decidable
+from context and distractors alone, so the forced choice is measuring span
+recovery and both views are far above it. My hypothesis that the task was hollow
+is refuted by its own control.
+
+**Tier C is dead as depicted, and now beyond argument.** The text view scores
+0.992 on the identical question, so the relation and the distractors are perfectly
+learnable — the model simply cannot read the diagram. Image 0.477 against a floor
+of 0.516 is *at* the floor: the picture contributes nothing. MSG 4.052 is a
+confident measurement of an unreadable stimulus. Two further weaknesses in the
+same tier: only **5 unique spans** across 2000 items, so the MSG denominator is
+built from very little variety, and the abstract filled/outlined marker encoding
+was already rebuilt once for the same reason.
+
+**Tier B: the negative delta is real, and my rule about it was wrong.** Text
+0.941 vs image 1.000 on the same 256 items is 15 discordant pairs, all one way —
+McNemar p ≈ 3e-5. Not noise. But the rule that flagged it ("the image view cannot
+beat a text view that can read the answer") rests on a premise that is false for
+the orthographic tier specifically: at Tier B *the image is a rendering of the
+answer*, read-back is 0.991, so the image view reads the span as directly as the
+text view does — and the frame ("the missing word is") is better posed for it,
+since nothing is missing when the span is written out. Image >= text is expected
+there, not impossible.
+
+The real content of that comparison is that the image view is **saturated**. A
+view at 1.000 has no headroom, so the delta bounds the functional gap near zero
+rather than measuring it. `delta_verdict()` now separates this from validity —
+they are independent questions, and Tier B is the case that proves it: the image
+view recovers the span perfectly (valid) and the delta means nothing (saturated).
+
+**This is the second criterion I have written, had block me, and then judged
+miscalibrated** (the first was Gate 0's held-out threshold). That pattern is a
+warning sign and is recorded as one. Two things distinguish this from moving a
+goalpost: the change is driven by a *new control* (the floor), not by re-reading
+the same numbers; and it does not change the verdict in my favour — under the
+revised rule Tier B still fails Gate 1's delta criterion, for a better-stated
+reason. If a third criterion needs relaxing, the correct response is to doubt
+the experimenter, not the criterion.
+
+### DECISION — 2026-08-27 · **GATE 1 NOT PASSED · NOT A DROP · one-week extension to 2026-09-02**
+
+Against the table in `docs/GATES.md`:
+
+- **DROP is not met, and not narrowly.** DROP requires the CI upper bound below
+  1.25 on *all* tiers and a delta under 2 points. Tier B's CI upper bound is
+  **3.096**. The phenomenon exists and is one of the largest effects the design
+  could have produced.
+- **PASS is not met**, on two counts. It needs >=2 of 3 tiers: only Tier B is
+  instrument-valid, Tier C is at its floor, Tier A has not run. And it needs a
+  functional delta >= 5 points, meaning substitution should *cost* accuracy —
+  the measured delta is -5.9 points against a saturated view, which is the
+  hypothesis failing rather than passing with the sign flipped.
+- **MARGINAL does not apply**: it is defined for MSG in 1.25–1.5.
+
+**No row of the table describes this result, and that is the finding.** The gate
+assumed the geometry and the behaviour would agree. They do not: the merge-position
+hidden state differs across modalities by 3x the within-modality control distance,
+and the model's behaviour at that position is *unaffected* — the image view answers
+perfectly. A large representational gap with no measurable functional cost is a
+different claim from the one this project set out to make, and a more interesting
+one, but only if it survives the obvious deflation.
+
+**The extension is one week, ends 2026-09-02, and is not renewable** (`docs/GATES.md`
+allows exactly one). It must resolve three things, in this order of decisiveness:
+
+1. **Is the gap a removable offset?** `results/phase1/results.json` already
+   contains `msg_offset_free` from this run — it was computed and not looked at.
+   If MSG collapses toward 1 once the per-modality mean is subtracted, the "gap"
+   is a translation, Phase 2's training program reduces to subtracting a constant,
+   and the honest output is a short note rather than a research program. This
+   costs nothing and is checked first.
+2. **A second valid tier.** Tier A (referential) needs Flickr30k Entities or
+   Visual Genome on disk (`docs/ENVIRONMENT.md` §4). It is the only route to the
+   >=2 tier requirement inside a week; Tier C needs a redesign *and* re-validation
+   and cannot be trusted on that timescale.
+3. **A functional task with headroom.** 1.000 cannot show a cost. Either harder
+   distractors (same word class, matched length and frequency) or a task the
+   image view does not trivially win — the point is to put a number on the
+   functional gap rather than bound it.
+
+**Pre-registered drop rule for 2026-09-02**, written before those numbers exist:
+if the offset-free MSG upper bound falls below 1.25 **and** no second tier is
+valid, the result is "a removable modality offset with no demonstrated functional
+cost and no demonstrated breadth" — **do not proceed to Phase 2; write the negative
+note.** If offset-free MSG holds well above 1.25 on Tier B, the gap is structural
+and Phase 2 has a target even at one valid tier, and Gate 1 passes on a stated
+amendment recorded here rather than on the original wording.
+
 ## Gate 2 — Is it trainable, and is the effect real? · due end of Week 7
 _Not yet reached._
 

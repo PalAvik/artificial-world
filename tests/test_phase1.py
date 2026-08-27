@@ -363,16 +363,35 @@ class TestForcedChoice:
         assert 0.0 <= r.image.accuracy <= 1.0
         assert r.delta == pytest.approx(r.text.accuracy - r.image.accuracy)
 
-    def test_flags_a_negative_delta_as_a_broken_task(self):
-        """The first run's signature: text 0.859, image 0.984. The image view
-        cannot legitimately beat a text view that can simply read the answer —
-        it meant the question ("the hidden part") only made sense for one
-        modality."""
+    def test_flags_a_negative_delta_below_ceiling(self):
+        """A negative delta with headroom left in the image view still means the
+        two views are answering different questions."""
         broken = functional.FunctionalResult(
-            text=functional.ChoiceResult(0.859, 256),
-            image=functional.ChoiceResult(0.984, 256))
-        assert "not answering the same question" in broken.validity()
-        assert broken.task_sanity() is not None
+            text=functional.ChoiceResult(0.910, 256),
+            image=functional.ChoiceResult(0.975, 256),
+            ablated=functional.ChoiceResult(0.480, 256))
+        assert "not answering the same question" in broken.delta_verdict()
+
+    def test_a_saturated_image_view_bounds_the_delta_rather_than_breaking(self):
+        """Tier B, 2026-08-27: text 0.941, image 1.000, floor 0.449. Reported as
+        a broken task, but the image view had simply run out of headroom — at
+        Tier B the image is a rendering of the answer, so it can read the span as
+        directly as the text view can. Valid measurement, unusable delta."""
+        sat = functional.FunctionalResult(
+            text=functional.ChoiceResult(0.941, 256),
+            image=functional.ChoiceResult(1.000, 256),
+            ablated=functional.ChoiceResult(0.449, 256))
+        assert sat.validity() is None          # the image view recovers the span
+        assert "at ceiling" in sat.delta_verdict()   # but the delta is a bound
+
+    def test_saturation_is_diagnosed_before_a_negative_delta(self):
+        """Order matters: saturation explains a negative delta, not the reverse.
+        Getting this backwards is what mislabelled Tier B."""
+        sat = functional.FunctionalResult(
+            text=functional.ChoiceResult(0.90, 256),
+            image=functional.ChoiceResult(1.00, 256),
+            ablated=functional.ChoiceResult(0.45, 256))
+        assert sat.delta < -0.05 and "at ceiling" in sat.delta_verdict()
 
     def test_flags_a_text_view_that_cannot_read_its_own_answer(self):
         weak = functional.FunctionalResult(

@@ -120,6 +120,11 @@ def measure_tier(model, processor, items, batch: int, layers, device: str,
     warning = fc.validity()
     if warning:
         print(f"    ! {warning}")
+    # Independent of validity: the image view can recover the span perfectly and
+    # still yield a delta that measures nothing.
+    delta_note = fc.delta_verdict()
+    if delta_note and delta_note != warning:
+        print(f"    ~ delta: {delta_note}")
 
     cap = runner.capture(model, processor, items, batch=batch, layers=layers,
                          device=device)
@@ -141,6 +146,7 @@ def measure_tier(model, processor, items, batch: int, layers, device: str,
             "n": fc.text.n,
             "chance": fc.image.chance,
             "validity_warning": warning,
+            "delta_warning": delta_note,
         },
         "layers_captured": captured,
         "jsd": cap["text"].jsd.summary(),
@@ -237,6 +243,8 @@ def _tier_header(res: dict) -> str:
     line = " · ".join(parts)
     if f.get("validity_warning"):
         line += f"\n\n> **Validity:** {f['validity_warning']}."
+    elif f.get("delta_warning"):
+        line += f"\n\n> **Delta:** {f['delta_warning']}."
     return line
 
 
@@ -388,7 +396,13 @@ def main() -> int:
         if f["validity_warning"]:
             verdict = (f"INVALID: {f['validity_warning']}. MSG {r.ratio_of_means:.2f} "
                        "is not interpretable for this tier.")
-        elif abs(f["delta"]) < 0.05 and verdict.startswith("PASS"):
+        elif verdict.startswith("PASS") and f.get("delta_warning"):
+            verdict = (f"MSG PASS; functional delta not usable — "
+                       f"{f['delta_warning']}")
+        elif f["delta"] < 0.05 and verdict.startswith("PASS"):
+            # Signed, not absolute: Gate 1 wants the substitution to *cost*
+            # accuracy. A delta at or below zero is the hypothesis failing, not
+            # passing with the sign flipped.
             verdict = (f"MSG PASS but functional delta {f['delta']:+.3f} < 0.05 — "
                        "Gate 1 needs both (docs/GATES.md)")
         res["gate1"] = verdict

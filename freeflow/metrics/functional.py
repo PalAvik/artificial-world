@@ -61,6 +61,10 @@ QUESTION = " The missing word is"
 # content, and the floor is meant to isolate the content.
 BLANK = "___"
 
+# Above this the image view has no headroom left, and a delta measured against
+# it is a bound rather than a measurement.
+CEILING = 0.99
+
 
 @dataclass
 class ChoiceResult:
@@ -100,14 +104,16 @@ class FunctionalResult:
     def image_above_chance(self) -> float:
         return self.image.accuracy - self.image.chance
 
+    @property
+    def image_at_ceiling(self) -> bool:
+        return self.image.accuracy >= CEILING
+
     def task_sanity(self, floor: float = 0.90) -> str | None:
         """None when the task itself works.
 
         The text view is the positive control: the span is written out in the
         context, so a model that cannot answer there is telling you the question
-        is broken, not that the representation is. A *negative* delta — image
-        beating text — is the same signal, and was how the first run's
-        modality-specific phrasing was caught.
+        is broken, not that the representation is.
         """
         # The floor first: it subsumes the others. If the choice is decidable
         # without the span, then every accuracy here is a statement about the
@@ -118,17 +124,45 @@ class FunctionalResult:
                     f"view of {self.text.accuracy:.3f} — the choice is decidable "
                     "from the context alone, so neither view is being scored on "
                     "the span and the delta means nothing")
-        # Then the negative delta: more specific than a low text score, which
-        # only says something is wrong.
-        if self.delta < -0.05:
-            return (f"delta is {self.delta:+.3f}: the image view beats the text "
-                    "view, which cannot be right when the text view can simply "
-                    "read the answer. The two views are not answering the same "
-                    "question")
         if self.text.accuracy < floor:
             return (f"text view scores {self.text.accuracy:.3f} with the span "
                     f"written out in front of it — below {floor:.2f}, the task "
                     "is mis-specified and the delta measures the task")
+        return None
+
+    def delta_verdict(self) -> str | None:
+        """None when the functional delta is a usable measurement.
+
+        Separate from `validity` because the two questions are independent: the
+        image view can recover the span perfectly (valid) and still yield a
+        delta that means nothing (saturated).
+
+        Order matters. A *saturated* image view is checked before a negative
+        delta, because saturation explains a negative delta and the reverse is
+        not true. This ordering was wrong in the run of 2026-08-27: Tier B
+        scored image 1.000 against text 0.941 and was reported as a broken task,
+        when in fact the image view had simply run out of headroom. At Tier B the
+        image *is* a rendering of the answer and read-back is 0.991, so the image
+        view can read the span as directly as the text view can — and the frame
+        ("the missing word is") is better posed for it, since nothing is missing
+        when the span is written out. Image >= text is therefore expected there,
+        not impossible, and the earlier rule asserted otherwise.
+
+        The rule survives for tiers where the image does not contain the answer
+        verbatim, which is where it was doing real work.
+        """
+        broken = self.task_sanity()
+        if broken:
+            return broken
+        if self.image_at_ceiling:
+            return (f"image view is at ceiling ({self.image.accuracy:.3f}) — a "
+                    "saturated view cannot exhibit a cost, so the delta bounds "
+                    "the functional gap near zero rather than measuring it. A "
+                    "harder task is needed to put a number on it")
+        if self.delta < -0.05:
+            return (f"delta is {self.delta:+.3f}: the image view beats the text "
+                    "view without being at ceiling, so the two views are not "
+                    "answering the same question")
         return None
 
     def validity(self, margin: float = 0.15) -> str | None:
