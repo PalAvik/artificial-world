@@ -5,11 +5,100 @@ Run these on the server. Nothing here needs to run in the authoring container.
 ## 0. Confirm the machine
 
 ```bash
-nvidia-smi                      # expect A100-SXM4-80GB or A100-80GB-PCIe, driver >= 535
+nvidia-smi                      # note the GPU model AND the driver version
 nvcc --version                  # needed only if you build flash-attn from source
 python3 --version               # 3.10 or 3.11
-df -h /data                     # need ~200 GB free (see docs/COMPUTE.md)
+df -h ~/data                    # need ~200 GB free (see docs/COMPUTE.md)
 ```
+
+Then, once torch is installed, always:
+
+```bash
+python scripts/check_gpu.py
+```
+
+It reports compute capability, driver, which architectures your torch build
+actually has kernels for, MIG topology, and whether flash-attn works on *this*
+device. Run it on every machine before recording any number.
+
+## 1a. Multiple GPU architectures (A100 / B200 / MIG)
+
+**"CUDA error: no kernel image is available for execution on the device"** is not
+a bug in the model code. It means the installed torch was compiled without
+kernels for that GPU's compute capability, and nothing in the training script
+can fix it.
+
+| GPU | Capability | Needs |
+|---|---|---|
+| A100 80GB | `sm_80` | CUDA 11.0+ — any recent torch |
+| H100 | `sm_90` | CUDA 11.8+ |
+| **B200** | **`sm_100`** | **CUDA 12.8+ (driver 570+); `cu124` builds will never work** |
+
+A `cu124` torch build stops at `sm_90`. To cover B200, move the whole project to
+a newer build — one environment can serve both A100 and B200, since CUDA 12.8+
+and 13.x still include `sm_80`:
+
+```bash
+# check the driver first — this decides which option applies
+nvidia-smi --query-gpu=driver_version --format=csv,noheader
+```
+
+- **Driver ≥ 580** — take the default PyPI wheel, which currently bundles CUDA 13:
+  ```bash
+  uv pip install --upgrade torch torchvision
+  ```
+- **Driver 570–579** — CUDA 13 needs 580+, so pin the cu128 channel instead:
+  ```bash
+  uv pip install --force-reinstall torch torchvision \
+      --index-url https://download.pytorch.org/whl/cu128
+  ```
+- **Driver < 570** — B200 is unusable regardless of torch. Stay on the A100 and
+  ask the cluster admins about the driver.
+
+Verify, don't assume — the arch list is the ground truth:
+
+```bash
+python -c "import torch; print(torch.cuda.get_arch_list())"   # must contain sm_100
+python scripts/check_gpu.py
+```
+
+### What upgrading torch breaks
+
+- **flash-attn.** The `+cu124torch2.5` wheel is built against that exact stack and
+  will fail to import after an upgrade. Reinstall a wheel matching the new
+  torch/CUDA pair, or drop it: `attn_implementation="sdpa"` costs ~15%, works on
+  every architecture, and PyTorch's own fused backends reach new hardware sooner
+  than flash-attn wheels do. **On B200, start with sdpa** and only add flash-attn
+  once the rest of the pipeline is green.
+- **bitsandbytes 8-bit optimizers** may lag on `sm_100`. It doesn't matter there —
+  B200's 180 GB makes plain fp32 AdamW affordable. Keep 8-bit for the A100.
+
+### MIG slices
+
+MIG partitions expose several isolated instances. Two things routinely go wrong:
+
+```bash
+nvidia-smi -L        # lists MIG UUIDs
+export CUDA_VISIBLE_DEVICES=MIG-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+```
+
+**Address slices by UUID, never by numeric index** — indices are unreliable once
+MIG is on, and landing on the wrong slice is silent. And **a process sees exactly
+one instance**: there is no NCCL, no peer-to-peer, no multi-GPU across slices.
+
+Slice sizing for this project:
+
+| Slice | Fits |
+|---|---|
+| `1g.10gb` | Nothing useful — 2B bf16 inference alone needs ~12 GB |
+| `2g.20gb` | Phase 1 inference and metric sweeps |
+| `3g.40gb` | LoRA training (~30 GB peak) |
+| `7g.80gb` | Full fine-tune |
+
+MIG's real value here is **concurrency, not speed**: Phase 1's metric sweep and
+the Phase 2 ablations are embarrassingly parallel, so several slices running
+independent jobs beat one slice running them in sequence. See the hardware policy
+in `docs/GATES.md` before splitting a comparison across machines.
 
 ## 1. Python environment
 

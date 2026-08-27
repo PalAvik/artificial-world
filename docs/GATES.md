@@ -5,7 +5,8 @@ on the date with the numbers that exist on that date — not a week later, and n
 "one more run".
 
 Recording rule: `results/RESULTS.md` gets one row per run — config hash, token count,
-MSG, probe accuracy, benchmark retention, wall clock. **No new run starts until the
+MSG, probe accuracy, benchmark retention, wall clock, **and the GPU architecture,
+torch version and attention backend** (see the hardware policy below). **No new run starts until the
 previous run's row is filled in.** This is the single most effective guard against a
 research project dissolving into undocumented runs.
 
@@ -97,6 +98,30 @@ it not one.
    State this as a limitation in the paper rather than pretending to more.
 5. **Held-out means held-out.** Fonts, images, and spans used in training never appear
    in a reported metric. Set the splits in Phase 0 and never revisit them.
+
+## Hardware policy
+
+More than one GPU architecture is available (A100, B200, MIG slices). That is
+useful for throughput and dangerous for comparisons.
+
+1. **Never split one comparison across architectures.** Every run that gets
+   compared — the main config against its ablations, a trained checkpoint against
+   its baseline, three seeds against each other — runs on the same architecture,
+   with the same torch build and the same attention backend. Kernel and reduction
+   -order differences across architectures are easily large enough to manufacture
+   or mask a 40% MSG change, and a Gate 2 decision made on a mixed comparison is
+   worthless.
+2. **Record the architecture, torch version, and attention backend in every
+   `results/RESULTS.md` row.** A run whose hardware is unrecorded cannot be
+   compared to anything later.
+3. **The A100 is the reference machine.** All gated numbers come from it. B200
+   and MIG are for exploration, parameter sweeps, and independent jobs whose
+   outputs are not compared against A100 runs.
+4. **MIG gives concurrency, not speed.** Use slices to run independent jobs in
+   parallel — the Phase 1 sweep, or several ablations at once. Do not use them to
+   make a single run faster; they can't.
+5. **If a run must be repeated on different hardware, repeat its baseline too.**
+   A ported run without a ported baseline is not a result.
 
 ## Scope decisions already made
 
