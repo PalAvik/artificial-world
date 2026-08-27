@@ -20,8 +20,15 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def _load(name: str):
-    """Import a script without a real torch, which the CPU tests don't need."""
-    if "torch" not in sys.modules:
+    """Import a script, stubbing torch only if it is genuinely unavailable.
+
+    These tests don't need torch, but they must not *shadow* it: installing a
+    stub unconditionally would poison every later import in the same pytest
+    session, including tests/test_metrics.py, which needs the real thing.
+    """
+    try:
+        import torch  # noqa: F401
+    except ImportError:
         stub = types.ModuleType("torch")
         stub.no_grad = lambda: (lambda f: f)
         sys.modules["torch"] = stub

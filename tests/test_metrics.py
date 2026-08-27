@@ -1,0 +1,368 @@
+"""CPU tests for the metric suite.
+
+The math is separated from the model plumbing precisely so it can be tested
+without a GPU. What matters most here is not that the functions run, but that
+they have the *properties the plan relies on*: offset-free distance really is
+blind to a translation, JSD really is bounded and symmetric, and MSG really
+equals 1 when crossing modalities costs exactly what rephrasing costs.
+
+    python -m pytest tests/test_metrics.py -q
+"""
+from __future__ import annotations
+
+import numpy as np
+import pytest
+import torch
+
+from freeflow.metrics import aggregate, distribution, geometry, msg, probe, runner
+
+torch.manual_seed(0)
+
+
+# --------------------------------------------------------------- geometry ---
+
+class TestCosineDistance:
+    def test_identical_vectors_are_zero(self):
+        a = torch.randn(16, 32)
+        assert torch.allclose(geometry.cosine_distance(a, a),
+                              torch.zeros(16), atol=1e-5)
+
+    def test_orthogonal_is_one_and_opposite_is_two(self):
+        a = torch.tensor([[1.0, 0.0]])
+        assert geometry.cosine_distance(a, torch.tensor([[0.0, 1.0]])).item() \
+            == pytest.approx(1.0, abs=1e-6)
+        assert geometry.cosine_distance(a, -a).item() == pytest.approx(2.0, abs=1e-6)
+
+    def test_bf16_input_does_not_lose_the_near_zero_regime(self):
+        a = torch.randn(8, 64)
+        b = a + 1e-3 * torch.randn(8, 64)
+        d = geometry.cosine_distance(a.bfloat16(), b.bfloat16())
+        assert torch.all(d >= 0) and torch.all(d < 0.1)
+
+
+class TestOffsetFree:
+    def test_a_pure_translation_has_zero_offset_free_distance(self):
+        """The property the whole H3 test rests on.
+
+        If the image cloud is the text cloud shifted by a constant, a linear
+        readout could undo it entirely — so the offset-free distance must see
+        nothing, while the raw distance sees the shift.
+        """
+        a = torch.randn(64, 32)
+        b = a + torch.tensor([5.0] + [0.0] * 31)
+        assert geometry.offset_free_distance(a, b).mean() < 1e-4
+        assert geometry.cosine_distance(a, b).mean() > 0.05
+
+    def test_offset_norm_matches_the_translation(self):
+        a = torch.randn(128, 16)
+        shift = torch.full((16,), 0.25)
+        stats = geometry.offset_stats(a + shift, a)
+        assert float(stats.norm) == pytest.approx(float(shift.norm()), rel=1e-4)
+
+    def test_genuine_divergence_survives_offset_removal(self):
+        a = torch.randn(64, 32)
+        b = torch.randn(64, 32)
+        assert geometry.offset_free_distance(a, b).mean() > 0.5
+
+
+class TestCKA:
+    def test_identical_representations_give_one(self):
+        a = torch.randn(64, 16)
+        assert geometry.linear_cka(a, a) == pytest.approx(1.0, abs=1e-5)
+
+    def test_invariant_to_isotropic_scaling_and_rotation(self):
+        a = torch.randn(64, 16)
+        q, _ = torch.linalg.qr(torch.randn(16, 16))
+        assert geometry.linear_cka(a, 3.7 * a @ q) == pytest.approx(1.0, abs=1e-4)
+
+    def test_unrelated_representations_score_low(self):
+        assert geometry.linear_cka(torch.randn(256, 16), torch.randn(256, 16)) < 0.25
+
+
+def test_per_layer_distances_rejects_mismatched_layer_counts():
+    with pytest.raises(ValueError, match="layer count"):
+        geometry.per_layer_distances([torch.randn(4, 8)] * 3, [torch.randn(4, 8)] * 2)
+
+
+# ----------------------------------------------------------- distribution ---
+
+class TestJSD:
+    def test_identical_distributions_are_zero(self):
+        z = torch.randn(8, 100)
+        assert torch.allclose(distribution.jensen_shannon(z, z),
+                              torch.zeros(8), atol=1e-6)
+
+    def test_never_negative_at_exact_equality(self):
+        # Floating point can land the analytic zero at -1e-9; clamping is why.
+        z = torch.randn(64, 500)
+        assert torch.all(distribution.jensen_shannon(z, z) >= 0.0)
+
+    def test_disjoint_support_saturates_at_one_bit(self):
+        big = 40.0
+        a = torch.tensor([[big, -big]])
+        b = torch.tensor([[-big, big]])
+        assert distribution.jensen_shannon(a, b).item() == pytest.approx(1.0, abs=1e-3)
+
+    def test_is_symmetric(self):
+        a, b = torch.randn(16, 200), torch.randn(16, 200)
+        assert torch.allclose(distribution.jensen_shannon(a, b),
+                              distribution.jensen_shannon(b, a), atol=1e-6)
+
+    def test_stays_within_bounds_over_random_inputs(self):
+        a, b = torch.randn(64, 300) * 5, torch.randn(64, 300) * 5
+        d = distribution.jensen_shannon(a, b)
+        assert torch.all(d >= 0) and torch.all(d <= 1.0 + 1e-5)
+
+    def test_nats_option_is_smaller_by_log2(self):
+        a, b = torch.randn(8, 50), torch.randn(8, 50)
+        bits = distribution.jensen_shannon(a, b, base2=True)
+        nats = distribution.jensen_shannon(a, b, base2=False)
+        assert torch.allclose(nats, bits * distribution.LOG2, atol=1e-6)
+
+
+class TestStreamingJSD:
+    def test_accumulates_one_value_per_item_across_batches(self):
+        s = distribution.StreamingJSD()
+        for _ in range(3):
+            s.update(torch.randn(4, 5, 50), torch.randn(4, 5, 50))
+        assert s.per_item.shape == (12,)
+        assert s.summary()["n"] == 12
+
+    def test_mask_excludes_padded_positions(self):
+        a, b = torch.randn(2, 4, 30), torch.randn(2, 4, 30)
+        mask = torch.tensor([[1, 1, 0, 0], [1, 1, 1, 1]])
+        masked = s_masked = distribution.StreamingJSD().update(a, b, mask)
+        unmasked = distribution.StreamingJSD().update(a, b)
+        # Row 1 is fully attended, so masking cannot change it.
+        assert masked[1].item() == pytest.approx(unmasked[1].item(), abs=1e-6)
+        # Row 0 drops two positions, so it generally does change.
+        assert s_masked[0].item() != pytest.approx(unmasked[0].item(), abs=1e-9)
+
+    def test_empty_summary_does_not_crash(self):
+        assert distribution.StreamingJSD().summary() == {"n": 0}
+
+    def test_summary_reports_the_tail_not_only_the_mean(self):
+        s = distribution.StreamingJSD()
+        s.update(torch.randn(64, 3, 40), torch.randn(64, 3, 40))
+        keys = s.summary()
+        assert {"mean", "median", "p90", "p99", "max"} <= set(keys)
+
+
+# -------------------------------------------------------------------- MSG ---
+
+class TestNormalizedMSG:
+    def test_equals_one_when_crossing_costs_what_rephrasing_costs(self):
+        """The calibration of the headline number: MSG ~ 1 is the target."""
+        d = torch.rand(200) + 0.1
+        r = msg.normalized_msg(d, d, d, n_boot=200)
+        assert r.ratio_of_means == pytest.approx(1.0, abs=1e-5)
+
+    def test_scales_linearly_with_the_cross_modal_distance(self):
+        d = torch.rand(200) + 0.1
+        r = msg.normalized_msg(2.0 * d, d, d, n_boot=0)
+        assert r.ratio_of_means == pytest.approx(2.0, abs=1e-5)
+
+    def test_denominator_averages_the_two_controls(self):
+        cross = torch.full((50,), 1.0)
+        r = msg.normalized_msg(cross, torch.full((50,), 1.0),
+                               torch.full((50,), 3.0), n_boot=0)
+        assert r.denominator_mean == pytest.approx(2.0, abs=1e-6)
+
+    def test_ratio_of_means_resists_a_near_zero_denominator(self):
+        """Why the headline is ratio-of-means and not mean-of-ratios."""
+        cross = torch.full((100,), 0.5)
+        within = torch.full((100,), 0.5)
+        within[0] = 1e-6                      # one paraphrase the model sees as identical
+        r = msg.normalized_msg(cross, within, within, n_boot=0)
+        assert r.ratio_of_means == pytest.approx(1.0, rel=0.05)
+        assert r.mean_of_ratios > 100          # the naive average is destroyed
+
+    def test_ci_brackets_the_point_estimate(self):
+        cross = torch.rand(300) * 2
+        within = torch.rand(300) + 0.5
+        r = msg.normalized_msg(cross, within, within, n_boot=500, seed=1)
+        assert r.ci is not None
+        assert r.ci[0] <= r.ratio_of_means <= r.ci[1]
+
+    def test_shape_mismatch_is_rejected(self):
+        with pytest.raises(ValueError, match="shape mismatch"):
+            msg.normalized_msg(torch.rand(10), torch.rand(9), torch.rand(10))
+
+    def test_empty_input_is_rejected(self):
+        with pytest.raises(ValueError, match="no items"):
+            msg.normalized_msg(torch.empty(0), torch.empty(0), torch.empty(0))
+
+
+class TestGate1Verdict:
+    def _res(self, point, lo, hi):
+        return msg.MSGResult(point, point, 0.0, 0.0, 100, (lo, hi))
+
+    def test_pass_needs_both_the_point_and_the_ci_lower_bound(self):
+        assert msg.gate1_verdict(self._res(1.8, 1.5, 2.1)).startswith("PASS")
+
+    def test_a_high_point_with_a_low_ci_is_only_marginal(self):
+        assert msg.gate1_verdict(self._res(1.6, 1.1, 2.4)).startswith("MARGINAL")
+
+    def test_ci_entirely_below_the_floor_is_a_drop_candidate(self):
+        assert msg.gate1_verdict(self._res(1.05, 0.95, 1.15)).startswith("DROP")
+
+    def test_missing_ci_is_inconclusive_not_a_pass(self):
+        r = msg.MSGResult(2.0, 2.0, 0.0, 0.0, 10, None)
+        assert msg.gate1_verdict(r).startswith("INCONCLUSIVE")
+
+
+# ------------------------------------------------------------------ probe ---
+
+class TestProbe:
+    def test_recovers_span_identity_from_separable_representations(self):
+        labels = np.repeat(np.arange(5), 40)
+        centres = torch.eye(5)[labels] * 8.0
+        h = centres + torch.randn(200, 5) * 0.2
+        assert probe.fit_probe(h, labels, seed=0).accuracy > 0.9
+
+    def test_scores_near_chance_when_the_representation_is_uninformative(self):
+        """The collapse signature: invariant but content-free."""
+        labels = np.repeat(np.arange(5), 40)
+        r = probe.fit_probe(torch.randn(200, 5) * 0.01, labels, seed=0)
+        assert r.accuracy < 0.45
+
+    def test_chance_uses_the_majority_class_not_one_over_k(self):
+        labels = np.array([0] * 90 + [1] * 10)
+        r = probe.fit_probe(torch.randn(100, 4), labels, seed=0)
+        assert r.chance > 0.6            # majority baseline, not 0.5
+
+    def test_rejects_mismatched_labels(self):
+        with pytest.raises(ValueError, match="hidden states for"):
+            probe.fit_probe(torch.randn(10, 4), np.arange(9))
+
+
+class TestCollapseCheck:
+    def test_invariance_with_retained_probe_passes(self):
+        r = probe.collapse_check(0.9, 2.0, 0.80, 0.82)
+        assert r["verdict"].startswith("PASS")
+
+    def test_invariance_with_a_falling_probe_is_named_collapse(self):
+        r = probe.collapse_check(0.9, 2.0, 0.50, 0.82)
+        assert r["verdict"].startswith("COLLAPSE")
+
+    def test_a_small_msg_reduction_is_insufficient_not_collapse(self):
+        r = probe.collapse_check(1.9, 2.0, 0.81, 0.82)
+        assert r["verdict"].startswith("INSUFFICIENT")
+
+
+# -------------------------------------------------------------- aggregate ---
+
+class TestAggregate:
+    def _data(self, n=200):
+        return torch.rand(n) + 0.5, torch.rand(n) + 0.5, torch.rand(n) + 0.5
+
+    def test_small_groups_are_dropped_rather_than_reported_noisily(self):
+        cross, wt, wi = self._data(100)
+        groups = ["big"] * 95 + ["tiny"] * 5
+        b = aggregate.msg_by_group(cross, wt, wi, groups, n_boot=50, min_group=30)
+        assert "big" in b.groups and "tiny" not in b.groups
+
+    def test_group_label_count_must_match_items(self):
+        cross, wt, wi = self._data(10)
+        with pytest.raises(ValueError, match="group labels"):
+            aggregate.msg_by_group(cross, wt, wi, ["a"] * 9, n_boot=0)
+
+    def test_conditioning_reports_the_readback_rate_and_both_views(self):
+        cross, wt, wi = self._data(200)
+        read_ok = torch.zeros(200, dtype=torch.bool)
+        read_ok[:180] = True
+        rep = aggregate.conditioned_msg(cross, wt, wi, ["all"] * 200, read_ok,
+                                        n_boot=50, min_group=30)
+        assert rep.readback_rate == pytest.approx(0.9)
+        assert rep.n_correct == 180
+        assert rep.read_correctly is not None
+        assert rep.read_correctly.overall.n == 180
+        assert rep.unconditional.overall.n == 200
+
+    def test_conditioning_is_skipped_when_too_few_spans_read_correctly(self):
+        cross, wt, wi = self._data(100)
+        read_ok = torch.zeros(100, dtype=torch.bool)
+        read_ok[:5] = True
+        rep = aggregate.conditioned_msg(cross, wt, wi, ["all"] * 100, read_ok,
+                                        n_boot=20, min_group=30)
+        assert rep.read_correctly is None
+
+    def test_bootstrap_ci_brackets_the_mean(self):
+        x = torch.randn(500) + 3.0
+        lo, hi = aggregate.bootstrap_ci(x, n_boot=400, seed=0)
+        assert lo < float(x.mean()) < hi
+
+
+# ----------------------------------------------------------------- runner ---
+
+class TestLayerSelection:
+    def test_always_includes_the_final_layer(self):
+        for n in (5, 13, 25, 41):
+            assert runner.default_layers(n)[-1] == n - 1
+
+    def test_returns_every_layer_when_there_are_few(self):
+        assert runner.default_layers(6, k=8) == list(range(6))
+
+    def test_spans_the_stack_without_duplicates(self):
+        idx = runner.default_layers(25, k=8)
+        assert idx[0] == 0 and len(idx) == len(set(idx)) and idx == sorted(idx)
+
+
+class TestMergePositionGather:
+    def test_pulls_the_state_at_each_row_s_own_merge_index(self):
+        n, length, d = 4, 7, 3
+        # Encode position in the values so a wrong index is visible.
+        hidden = torch.arange(n * length * d, dtype=torch.float32).reshape(n, length, d)
+        merge = torch.tensor([0, 2, 4, 6])
+        got = runner.gather_merge_hidden([hidden], merge, [0])[0]
+        for row in range(n):
+            assert torch.equal(got[row], hidden[row, merge[row]])
+
+    def test_handles_layers_of_differing_width(self):
+        hs = [torch.randn(3, 5, 8), torch.randn(3, 5, 16)]
+        out = runner.gather_merge_hidden(hs, torch.tensor([1, 2, 3]), [0, 1])
+        assert out[0].shape == (3, 8) and out[1].shape == (3, 16)
+
+
+class TestContinuationLogits:
+    class _Head(torch.nn.Module):
+        def __init__(self, d, v):
+            super().__init__()
+            self.weight = torch.nn.Parameter(torch.randn(v, d))
+
+        def forward(self, x):
+            return x @ self.weight.T
+
+    class _Model:
+        def __init__(self, head):
+            self._head = head
+
+        def get_output_embeddings(self):
+            return self._head
+
+    def test_slices_the_positions_that_predict_the_suffix(self):
+        n, length, d, v, k = 2, 10, 4, 7, 3
+        head = self._Head(d, v)
+        model = self._Model(head)
+        hidden = torch.randn(n, length, d)
+        merge = torch.tensor([4, 6])
+        out = runner.continuation_logits(model, hidden, merge, k)
+        assert out.shape == (n, k, v)
+        # Position i predicts token i+1, so the slice starts at merge-1.
+        for row, m in enumerate(merge.tolist()):
+            expected = head(hidden[row, m - 1: m - 1 + k])
+            assert torch.allclose(out[row], expected, atol=1e-5)
+
+    def test_merge_index_zero_does_not_index_backwards(self):
+        head = self._Head(4, 5)
+        out = runner.continuation_logits(self._Model(head), torch.randn(1, 6, 4),
+                                         torch.tensor([0]), 2)
+        assert out.shape == (1, 2, 5)
+
+    def test_missing_output_head_raises_rather_than_returning_nonsense(self):
+        class _NoHead:
+            def get_output_embeddings(self):
+                return None
+        with pytest.raises(ValueError, match="output embedding"):
+            runner.continuation_logits(_NoHead(), torch.randn(1, 4, 3),
+                                       torch.tensor([1]), 2)
