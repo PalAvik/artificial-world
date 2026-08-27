@@ -364,6 +364,29 @@ class TestForcedChoice:
         assert 0.0 <= r.image.accuracy <= 1.0
         assert r.delta == pytest.approx(r.text.accuracy - r.image.accuracy)
 
+    def test_flags_a_negative_delta_as_a_broken_task(self):
+        """The first run's signature: text 0.859, image 0.984. The image view
+        cannot legitimately beat a text view that can simply read the answer —
+        it meant the question ("the hidden part") only made sense for one
+        modality."""
+        broken = functional.FunctionalResult(
+            text=functional.ChoiceResult(0.859, 256),
+            image=functional.ChoiceResult(0.984, 256))
+        assert "not answering the same question" in broken.validity()
+        assert broken.task_sanity() is not None
+
+    def test_flags_a_text_view_that_cannot_read_its_own_answer(self):
+        weak = functional.FunctionalResult(
+            text=functional.ChoiceResult(0.70, 256),
+            image=functional.ChoiceResult(0.60, 256))
+        assert "mis-specified" in weak.task_sanity()
+
+    def test_a_healthy_task_passes_sanity(self):
+        good = functional.FunctionalResult(
+            text=functional.ChoiceResult(0.98, 256),
+            image=functional.ChoiceResult(0.88, 256))
+        assert good.task_sanity() is None and good.validity() is None
+
     def test_flags_an_image_view_stuck_at_chance(self):
         """The Tier C failure the first Phase 1 run could not see: a diagram the
         model cannot decode still yields a confident MSG."""
@@ -377,6 +400,16 @@ class TestForcedChoice:
             text=functional.ChoiceResult(0.95, 100),
             image=functional.ChoiceResult(0.84, 100))
         assert ok.validity() is None
+
+    def test_option_length_is_measured_in_context_not_standalone(self, stack,
+                                                                 corpus):
+        """Tokenising an option on its own can disagree with how it tokenises
+        glued to the preceding text, drifting the scored positions off it."""
+        model, proc = stack
+        scores = functional._option_logprobs(
+            model, proc, corpus[:4], "text",
+            [it.span_text for it in corpus[:4]], device="cpu")
+        assert scores.shape == (4,) and torch.isfinite(scores).all()
 
 
 class TestTierAwareValidity:

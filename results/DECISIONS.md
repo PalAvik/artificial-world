@@ -143,9 +143,39 @@ delta, which the first run did not measure at all.
    check; Tier A has not been run (needs Flickr30k or Visual Genome on disk).
 2. PASS requires a functional accuracy delta >= 5 points, which was not measured.
 
-Re-run with the fixes before the gate date. If Tier C's image view lands near
-chance, that is itself a finding about the diagram design, not a licence to
-report MSG 4.05.
+**2026-08-27, second run — validity check works; the task was mis-specified.**
+
+| tier | MSG | forced choice: text / image | delta | verdict |
+|---|---|---|---|---|
+| B | 3.023 [2.953, 3.096] | 0.859 / 0.984 | **-0.125** | MSG passes; task broken |
+| C | 4.052 [3.981, 4.127] | 0.785 / **0.484** | +0.301 | INVALID — at chance |
+
+**Tier C: the model cannot decode the relation diagrams.** 0.484 against chance
+0.50. The validity check did exactly what it was added for — MSG 4.05 is a
+confident number about nothing. This is a finding about the diagram design, not
+about relational representation, and the tier cannot count toward Gate 1 until
+the depiction is fixed.
+
+**Tier B: the forced-choice task itself was broken**, in a way the numbers make
+obvious once looked at. The image view scored *higher* than the text view
+(0.984 vs 0.859), which cannot be right when the text view has the answer
+written in its context. Two causes, both mine:
+
+1. The question asked about "the hidden part", which is only coherent for the
+   image view — nothing is hidden when the span is written out. The two views
+   were answering different questions.
+2. Option token ids were obtained by tokenising the option standalone, but the
+   option appears in context glued to the preceding text. A merge across that
+   boundary drifts the scored positions off the option, silently. Now obtained
+   by differencing, the same way the merge index avoids the same hazard.
+
+The delta is now guarded: a negative delta, or a text view below 0.90, marks the
+task mis-specified rather than reporting a number. **Tier B's MSG of 3.023 is
+unaffected** — it comes from hidden-state geometry, not from this task — but its
+functional delta is not yet measured.
+
+**Gate 1 still cannot be called.** Tier B has a strong MSG and no valid delta;
+Tier C is invalid; Tier A has not run.
 
 ## Gate 2 — Is it trainable, and is the effect real? · due end of Week 7
 _Not yet reached._

@@ -34,6 +34,12 @@ import torch
 from ..data.views import SpanItem
 from .runner import build_view
 
+# Modality-neutral on purpose. The first version asked about the "hidden part",
+# which is only coherent for the image view — nothing is hidden when the span is
+# written out — so the two views were not answering the same question and the
+# delta measured the mismatch rather than the substitution.
+QUESTION = " The missing word is"
+
 
 @dataclass
 class ChoiceResult:
@@ -61,8 +67,34 @@ class FunctionalResult:
     def image_above_chance(self) -> float:
         return self.image.accuracy - self.image.chance
 
+    def task_sanity(self, floor: float = 0.90) -> str | None:
+        """None when the task itself works.
+
+        The text view is the positive control: the span is written out in the
+        context, so a model that cannot answer there is telling you the question
+        is broken, not that the representation is. A *negative* delta — image
+        beating text — is the same signal, and was how the first run's
+        modality-specific phrasing was caught.
+        """
+        # Negative delta first: it is the more specific diagnosis. It says the
+        # two views are answering different questions, where a low text score
+        # alone only says something is wrong.
+        if self.delta < -0.05:
+            return (f"delta is {self.delta:+.3f}: the image view beats the text "
+                    "view, which cannot be right when the text view can simply "
+                    "read the answer. The two views are not answering the same "
+                    "question")
+        if self.text.accuracy < floor:
+            return (f"text view scores {self.text.accuracy:.3f} with the span "
+                    f"written out in front of it — below {floor:.2f}, the task "
+                    "is mis-specified and the delta measures the task")
+        return None
+
     def validity(self, margin: float = 0.15) -> str | None:
         """None when the image span demonstrably carries its content."""
+        broken = self.task_sanity()
+        if broken:
+            return broken
         if self.image_above_chance < margin:
             return (f"image view scores {self.image.accuracy:.3f} against chance "
                     f"{self.image.chance:.2f} — the model cannot recover the span "
@@ -100,35 +132,43 @@ def _option_logprobs(model, processor, items: Sequence[SpanItem], modality: str,
                      options: Sequence[str], device: str) -> torch.Tensor:
     """Mean per-token logprob of each option, appended after the item's suffix.
 
-    Length-normalised, so a shorter option is not favoured simply for having
-    fewer tokens to be wrong about.
+    Length-normalised, so a shorter option is not favoured for having fewer
+    tokens to be wrong about.
+
+    **The option's token count is obtained by differencing**, not by tokenising
+    the option on its own. Tokenisation is not compositional: an option glued to
+    the preceding text can merge across the boundary, so standalone ids need not
+    match the ids actually in the sequence, and the scored positions would drift
+    off the option silently. Same hazard the merge index avoids the same way.
     """
-    tok = getattr(processor, "tokenizer", processor)
-    probed = [SpanItem(prefix=it.prefix, span_text=it.span_text,
-                       suffix=it.suffix + QUESTION + opt,
-                       span_image=it.span_image,
-                       span_paraphrase=it.span_paraphrase,
-                       span_image_alt=it.span_image_alt, span_id=it.span_id,
-                       group=it.group, tier=it.tier)
-              for it, opt in zip(items, options)]
-
     scores = []
-    for item, opt in zip(probed, options):
-        vb = build_view(processor, [item], modality, "primary", device)
-        out = model(**vb.inputs, output_hidden_states=False)
-        logits = out.logits[0].float().log_softmax(dim=-1)
-        opt_ids = tok(opt, add_special_tokens=False)["input_ids"]
-        k = len(opt_ids)
-        n = int(vb.inputs["attention_mask"][0].sum())
-        # Position i predicts token i+1, so the option's tokens are scored by
-        # the logits immediately preceding them.
-        idx = torch.arange(n - k - 1, n - 1, device=logits.device)
-        target = torch.tensor(opt_ids, device=logits.device)
-        scores.append(float(logits[idx, target].mean()))
+    for item, opt in zip(items, options):
+        without = SpanItem(prefix=item.prefix, span_text=item.span_text,
+                           suffix=item.suffix + QUESTION,
+                           span_image=item.span_image,
+                           span_paraphrase=item.span_paraphrase,
+                           span_image_alt=item.span_image_alt,
+                           span_id=item.span_id, group=item.group, tier=item.tier)
+        with_opt = SpanItem(**{**without.__dict__,
+                               "suffix": item.suffix + QUESTION + " " + opt})
+
+        vb_short = build_view(processor, [without], modality, "primary", device)
+        vb_full = build_view(processor, [with_opt], modality, "primary", device)
+        n_short = int(vb_short.inputs["attention_mask"][0].sum())
+        n_full = int(vb_full.inputs["attention_mask"][0].sum())
+        k = n_full - n_short
+        if k <= 0:
+            scores.append(float("-inf"))
+            continue
+
+        out = model(**vb_full.inputs, output_hidden_states=False)
+        logprobs = out.logits[0].float().log_softmax(dim=-1)
+        # Position i predicts token i+1, so the k option tokens at
+        # [n_full-k, n_full) are scored by logits at [n_full-k-1, n_full-1).
+        idx = torch.arange(n_full - k - 1, n_full - 1, device=logprobs.device)
+        target = vb_full.inputs["input_ids"][0, n_full - k:n_full]
+        scores.append(float(logprobs[idx, target].mean()))
     return torch.tensor(scores)
-
-
-QUESTION = " Was the hidden part:"
 
 
 def forced_choice(model, processor, items: Sequence[SpanItem],
