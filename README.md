@@ -32,6 +32,21 @@ docs/         notes, related-work sweep, results
 | [`results/RESULTS.md`](./results/RESULTS.md) | One row per run. No new run until the last row is filled. |
 | [`results/DECISIONS.md`](./results/DECISIONS.md) | Gate calls, written on the gate's date |
 
+## Running things
+
+Scripts work from any directory with no install step:
+
+```bash
+python scripts/check_gpu.py                        # architecture, driver, backends
+python scripts/setup_fonts.py --download           # Tier B font set (no root needed)
+python scripts/gate0_sweep.py --model <base>       # Gate 0: freeze the render config
+python scripts/phase1_measure.py --model <base>    # Gate 1: measure the gap
+pytest -q                                          # 146 CPU tests, no GPU required
+```
+
+`pip install -e .` is optional and only needed for `import freeflow` from
+elsewhere.
+
 ## Order of work
 
 Phase 0 builds `freeflow/data/` and `freeflow/metrics/`. Phase 1 is inference-only

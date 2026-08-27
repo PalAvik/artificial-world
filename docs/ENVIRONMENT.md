@@ -133,6 +133,11 @@ uv pip install "transformers>=4.57.0" accelerate peft datasets \
 # Qwen-VL image preprocessing helpers
 uv pip install qwen-vl-utils
 
+# The project itself. Optional — every script bootstraps the repo root onto
+# sys.path, so they run from any directory without this. Installing is still
+# worth it if you want `import freeflow` from a notebook or another checkout.
+uv pip install -e .
+
 # FlashAttention-2 — the project default. The wheel must match the torch build
 # exactly, so resolve it rather than guessing a URL:
 #
