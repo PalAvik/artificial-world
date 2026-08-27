@@ -71,10 +71,20 @@ covers `32×32 = 1024` px, so `min_pixels=1024` is "at least one token".
 | default | 71 | 25 / 96 |
 | 1024 | **3** | 25 / **28** |
 
-A 24× reduction, and the two views now differ by 3 tokens rather than 71. That second
-column is the one that matters: the cardinality gap is the asymmetry the
-merge-position design works around (`PLAN.md` §1.1), and it is now nearly closed by
-construction rather than by argument.
+A 24× reduction. That second column is the one that matters: the cardinality gap is
+the asymmetry the merge-position design works around (`PLAN.md` §1.1).
+
+**Frozen at Gate 0: height 48, `min_pixels` 1024 — 6 visual tokens per span**
+(`configs/render.yaml`). The 3-token configs were cheaper but could not clear the
+read-back thresholds at the CI lower bound, and legibility is the constraint the
+objective is subordinate to. Use **6 tokens per substituted span** in every
+sequence-length and cost estimate from here; for a one-word span that leaves V_I
+about 4–5 tokens longer than V_T, which is small but not parity — hence the merge
+position.
+
+Re-check or reproduce with `python scripts/gate0_sweep.py --model <base-model>`.
+Treat visual-token count as an **experiment parameter**, not an incidental default:
+it sets both the compute cost of every sweep and the V_T/V_I cardinality gap.
 
 ### Measured throughput — A100 80GB (the reference machine)
 

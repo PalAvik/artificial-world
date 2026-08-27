@@ -68,6 +68,47 @@ function-word deficit, so a function-word gap in Phase 1 would be representation
 rather than an artifact. But it also means class comparisons in Phase 1 must
 control for read-back accuracy, or restrict to spans the model reads correctly.
 
+### DECISION — 2026-08-27 · **GATE 0 PASSED**
+
+**Frozen config: height 48, pad 4, `min_pixels` 1024 — 6 visual tokens per span.**
+
+| | 1-word | 3-word |
+|---|---|---|
+| train (selection), point | 0.988 | 0.975 |
+| train, 95% CI lower | **0.975** | **0.957** |
+| threshold | 0.95 | 0.88 |
+| held-out fonts, point | 0.941 | 0.900 |
+| held-out, CI lower | 0.918 | 0.871 |
+| held-out floor | 0.90 | 0.83 |
+
+n = 512 spans per cell, 12 training fonts, 4 held out. CER 0.003.
+
+**Reasoning:** the cheapest config clearing the train thresholds at the CI lower
+bound while keeping held-out fonts above the floor. Two cheaper configs
+(h=24/1024 and h=32/1024, 3 tokens) failed the train constraint at the lower
+bound; the two 8-token configs cleared everything but cost more for no gain.
+`min_pixels` does not bind at h=48 — the 1024 and 4096 rows are identical — so
+the simpler value is frozen.
+
+**Read-back by word class at the winning config** (1-word, train): abstract 1.00,
+concrete 1.00, function 1.00, rare/long 0.95. Only long words fall below ceiling,
+confirming that read-back tracks length rather than class. **There is no OCR-level
+function-word deficit**, so a function-word gap in Phase 1 is representational
+rather than an artifact — which is what H2 needs in order to mean anything.
+
+**Consequences carried forward:**
+- 6 visual tokens per span enters every later cost estimate.
+- V_I runs ~4–5 tokens longer than V_T for a one-word span. Not parity, which is
+  precisely why equivalence is asserted at the merge position rather than on the
+  span (PLAN.md §1.1).
+- Every Tier B metric reports unconditionally *and* conditioned on correct
+  read-back (PLAN.md §5.3a); at 0.94–0.99 read-back that conditioning retains
+  nearly all spans.
+- `configs/render.yaml` and `configs/fonts.yaml` are frozen. Changing either
+  invalidates every measurement taken before the change.
+
+---
+
 ## Gate 1 — Does the gap exist? · due end of Week 3
 _Not yet reached._
 
