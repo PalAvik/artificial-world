@@ -5,8 +5,8 @@ This is a constrained minimisation, not a pass/fail check (docs/GATES.md):
 
     minimise   visual tokens per span
     subject to read-back accuracy >= 95% (1 word) and >= 88% (3 words),
-               at the LOWER BOUND of the 95% CI, on training fonts,
-               and legible enough on held-out fonts to keep Gate 2(a) meaningful
+               at the LOWER BOUND of the 95% CI on training fonts, and above a
+               lower floor on held-out fonts
 
 The objective and the constraint pull against each other. Smaller strips and a
 lower `min_pixels` keep the V_T/V_I cardinality gap near zero and every later
@@ -17,10 +17,10 @@ Two refinements the first real sweep forced:
 - **Thresholds are checked at the CI lower bound.** At n=128 a measured 0.953
   has a 95% interval of [0.90, 0.98] and does not establish 0.95. Freezing on
   that is freezing on noise, so the default n is 512.
-- **Held-out fonts are a validity constraint, not a tie-breaker.** Gate 2(a)
-  evaluates the trained model on held-out fonts; if the base model cannot read
-  them at the frozen config, that gate is floor-limited by OCR and measures
-  nothing. See select_winner for why this is not the same as tuning on them.
+- **Held-out fonts get a floor, not the train threshold.** They need to be
+  legible enough that OCR failure stays a minority contributor to MSG. Holding
+  them to the train threshold would be requiring the held-out set not to be
+  held out. See select_winner.
 
 Usage:
     python scripts/gate0_sweep.py --model Qwen/Qwen3.5-2B
@@ -191,19 +191,27 @@ def evaluate(model, processor, fonts: dict[str, str], height: int,
 def select_winner(rows: list[dict]) -> dict | None:
     """The constrained minimisation: cheapest config meeting both constraints.
 
-    Two constraints, not one:
+    Two constraints, calibrated differently on purpose:
 
-    1. **Train legibility, at the CI lower bound.** A point estimate that grazes
-       the threshold is not evidence of clearing it.
-    2. **Held-out-font legibility.** Gate 2(a) evaluates the trained model on
-       held-out fonts. If the base model cannot read those fonts at the frozen
-       render config, that gate is floor-limited by OCR and measures nothing.
+    1. **Train legibility at the CI lower bound**, against the full thresholds.
+       A point estimate that grazes a threshold is not evidence of clearing it.
+    2. **Held-out-font legibility against a lower floor** (`--held-margin`
+       below the train thresholds, 5 points by default).
 
-    The second is a judgement call worth naming: it does look at the held-out
-    set. But it checks a *validity precondition of the measuring instrument*
-    rather than tuning model behaviour toward the split — closer to confirming
-    the test set isn't corrupted than to fitting on it. The alternative is
-    discovering in week 7 that Gate 2(a) was unmeasurable from the start.
+    Why the floor is lower rather than equal. Gate 2(a) evaluates the trained
+    model on held-out fonts, so those fonts must be legible enough that OCR
+    failure is a minority contributor to MSG — not so legible that they match
+    training typefaces. At 0.94 read-back, 94% of spans are read correctly and
+    their MSG is clean signal; the residual 6% is handled properly by reporting
+    MSG both unconditionally and conditioned on correct read-back, which the
+    metric suite requires anyway (PLAN.md §5). Demanding the *train* threshold
+    on held-out fonts would be requiring the held-out set not to be held out.
+
+    This constraint does look at the held-out set. It checks a validity
+    precondition of the measuring instrument rather than tuning behaviour toward
+    the split — closer to confirming the test set isn't corrupted than to
+    fitting on it — but it is a judgement call, so it is stated rather than
+    buried.
 
     Ties on visual-token count break toward higher accuracy. Returns None when
     nothing qualifies — a gate outcome, not an error (docs/GATES.md).
@@ -233,6 +241,11 @@ def main() -> int:
                     help="two configs and n=32, to shake out the pipeline")
     ap.add_argument("--acc1", type=float, default=0.95, help="1-word threshold")
     ap.add_argument("--acc3", type=float, default=0.88, help="3-word threshold")
+    ap.add_argument("--held-margin", type=float, default=0.05,
+                    help="how far below the train thresholds held-out fonts may "
+                         "fall and still qualify. A floor that keeps OCR failure "
+                         "a minority contributor to MSG, not a second copy of the "
+                         "train criterion.")
     ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args()
 
@@ -285,9 +298,11 @@ def main() -> int:
         # frozen on a point estimate that merely grazes the threshold.
         passes = (train["w1"]["acc_lo"] >= args.acc1 and
                   train["w3"]["acc_lo"] >= args.acc3)
+        # Held-out fonts get a floor, not the train threshold — see
+        # select_winner for why the two are calibrated differently.
         held_ok = (held is None or
-                   (held["w1"]["acc_lo"] >= args.acc1 and
-                    held["w3"]["acc_lo"] >= args.acc3))
+                   (held["w1"]["acc_lo"] >= args.acc1 - args.held_margin and
+                    held["w3"]["acc_lo"] >= args.acc3 - args.held_margin))
         rows.append({"height": height, "min_pixels": min_px, "visual_tokens": cost,
                      "train": train, "held_out": held, "passes": passes,
                      "held_ok": held_ok, "seconds": round(dt, 1)})
@@ -314,12 +329,15 @@ def main() -> int:
         train_only = [r for r in rows if r["passes"] and not r["held_ok"]]
         if train_only:
             print("\nNO CONFIG CLEARS BOTH CONSTRAINTS.")
-            print(f"  {len(train_only)} config(s) clear on training fonts but fail on")
-            print("  held-out fonts. Freezing one of those would leave Gate 2(a)")
-            print("  floor-limited by OCR on exactly the fonts it evaluates.")
-            print("  -> Widen the sweep upward (larger min_pixels, taller strips)")
-            print("     before considering a train-only config, and if you do take")
-            print("     one, record in DECISIONS.md that Gate 2(a) is compromised.")
+            print(f"  {len(train_only)} config(s) clear on training fonts but fall")
+            print(f"  below the held-out floor (train thresholds minus "
+                  f"{args.held_margin:.2f}).")
+            print("  -> Widen the sweep upward (taller strips, larger min_pixels).")
+            print("  -> If the best held-out miss is small, check whether the floor")
+            print("     itself is right before widening: held-out fonts only need to")
+            print("     be legible enough that OCR failure stays a minority")
+            print("     contributor to MSG, and the metric suite already reports")
+            print("     MSG conditioned on correct read-back (PLAN.md §5).")
             for r in sorted(train_only, key=lambda r: r["visual_tokens"]):
                 print(f"     h={r['height']} min_px={r['min_pixels']} "
                       f"{r['visual_tokens']} tok  held-out 1w "

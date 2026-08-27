@@ -224,6 +224,21 @@ content* (different photo for Tier A; different font/size/background for Tier B)
 The denominator is what makes the whole suite credible, and building the paraphrase/re-render
 machinery is therefore a Phase-0 dependency, not an afterthought.
 
+### 5.3a Every Tier B metric is reported twice
+
+Read-back is never perfect, so a misread span contributes a large MSG for a
+reason that has nothing to do with representational geometry. Every Tier B
+number is therefore reported **both unconditionally and conditioned on spans the
+model reads correctly**, with the read-back rate stated alongside.
+
+This is not bookkeeping. It is what makes a residual OCR error rate harmless
+rather than a confound, and it is why held-out fonts need only be legible enough
+to keep misreads a minority — not as legible as training fonts. It also settles
+the word-class question: Gate 0 showed read-back accuracy tracks word *length*,
+not word class (function 1.00, abstract 1.00, concrete 0.91, rare/long 0.91), so
+an unconditioned class comparison would report OCR difficulty as if it were a
+representational gap.
+
 ### 5.4 Informativeness probe — the anti-collapse control
 Invariance is trivially maximized by mapping everything to a constant. Guard against it:
 train a linear probe on `h` at the merge position to recover the identity of the substituted

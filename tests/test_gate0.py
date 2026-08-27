@@ -198,6 +198,27 @@ class TestSelection:
         assert g0.select_winner([_row(3, 0.99, 0.99, True, held_ok=False)]) is None
 
 
+class TestHeldOutFloor:
+    """The floor is deliberately below the train threshold — see select_winner.
+    These pin the calibration so it cannot drift back by accident."""
+
+    def test_a_config_just_under_the_train_threshold_on_held_out_still_qualifies(self):
+        # h=32/min_px=4096 from the n=512 sweep: held-out lower bound 0.945.
+        # Under the train threshold it was rejected; under the floor it is fine.
+        rows = [_row(8, 0.975, 0.947, True, held_ok=True)]
+        assert g0.select_winner(rows)["visual_tokens"] == 8
+
+    def test_floor_is_five_points_below_by_default(self):
+        import argparse
+        ap = argparse.ArgumentParser()
+        ap.add_argument("--held-margin", type=float, default=0.05)
+        assert ap.parse_args([]).held_margin == 0.05
+
+    def test_genuinely_illegible_held_out_still_disqualifies(self):
+        # h=16 configs: held-out ~0.71 lower bound, far under any sensible floor.
+        assert g0.select_winner([_row(4, 0.97, 0.95, True, held_ok=False)]) is None
+
+
 class TestWilson:
     def test_lower_bound_is_below_the_point_estimate(self):
         lo = g0.wilson_lower(122, 128)

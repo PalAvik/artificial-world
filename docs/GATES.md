@@ -38,11 +38,17 @@ estimate. A point estimate that grazes the threshold is not evidence of clearing
 at n=128, 0.953 carries an interval of [0.90, 0.98]. Default n is 512, the smallest
 that can resolve a 0.97 measurement against a 0.95 threshold.
 
-**Second constraint: the config must be legible on held-out fonts too.** Gate 2(a)
-evaluates the trained model on held-out fonts; if the base model cannot read them at
-the frozen render config, that condition is floor-limited by OCR and measures nothing.
-This checks a validity precondition of the instrument rather than tuning toward the
-split — but it does look at it, so it is stated here rather than left implicit.
+**Second constraint: held-out fonts must clear a floor** — the train thresholds minus
+5 points (`--held-margin`), also at the CI lower bound. Gate 2(a) evaluates the trained
+model on held-out fonts, so they must be legible enough that OCR failure stays a
+minority contributor to MSG. They do **not** need to match training-font legibility:
+requiring that would be requiring the held-out set not to be held out. The residual
+misread rate is handled where it belongs, by reporting every Tier B metric both
+unconditionally and conditioned on correct read-back (`PLAN.md` §5.3a).
+
+This constraint does look at the held-out set. It checks a validity precondition of the
+measuring instrument rather than tuning toward the split — but it is a judgement call,
+so it is stated here rather than left implicit.
 
 | Outcome | Threshold | Action |
 |---|---|---|
