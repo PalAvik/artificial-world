@@ -4,16 +4,23 @@
 This is a constrained minimisation, not a pass/fail check (docs/GATES.md):
 
     minimise   visual tokens per span
-    subject to read-back accuracy >= 95% (1 word) and >= 88% (3 words)
+    subject to read-back accuracy >= 95% (1 word) and >= 88% (3 words),
+               at the LOWER BOUND of the 95% CI, on training fonts,
+               and legible enough on held-out fonts to keep Gate 2(a) meaningful
 
-The two pull against each other. Smaller strips and a lower `min_pixels` keep
-the V_T/V_I cardinality gap near zero and every later sweep cheap; larger ones
-make the glyphs legible. The winner is the cheapest config that still clears
-both thresholds.
+The objective and the constraint pull against each other. Smaller strips and a
+lower `min_pixels` keep the V_T/V_I cardinality gap near zero and every later
+sweep cheap; larger ones make the glyphs legible.
 
-Selection uses only the *training* fonts. Held-out fonts are measured and
-reported but never selected on — choosing a config because it happens to suit
-a held-out font would contaminate the very split Gate 2 depends on.
+Two refinements the first real sweep forced:
+
+- **Thresholds are checked at the CI lower bound.** At n=128 a measured 0.953
+  has a 95% interval of [0.90, 0.98] and does not establish 0.95. Freezing on
+  that is freezing on noise, so the default n is 512.
+- **Held-out fonts are a validity constraint, not a tie-breaker.** Gate 2(a)
+  evaluates the trained model on held-out fonts; if the base model cannot read
+  them at the frozen config, that gate is floor-limited by OCR and measures
+  nothing. See select_winner for why this is not the same as tuning on them.
 
 Usage:
     python scripts/gate0_sweep.py --model Qwen/Qwen3.5-2B
@@ -49,6 +56,24 @@ WORD_CLASSES: dict[str, list[str]] = {
                   "syzygy", "brobdingnagian", "eleemosynary", "pulchritude",
                   "crepuscular", "obstreperous", "vicissitude", "peripatetic"],
 }
+
+
+def wilson_lower(hits: int, n: int, z: float = 1.96) -> float:
+    """Lower bound of the 95% Wilson score interval.
+
+    The gate is checked against this rather than the point estimate. At n=128 a
+    measured 0.953 carries a CI of [0.90, 0.98] — indistinguishable from 0.93,
+    and freezing a config on that basis would be freezing on noise. Wilson
+    rather than normal-approximation because accuracies here sit near 1.0,
+    where the normal interval misbehaves.
+    """
+    if n == 0:
+        return 0.0
+    p = hits / n
+    denom = 1 + z * z / n
+    centre = p + z * z / (2 * n)
+    margin = z * ((p * (1 - p) / n + z * z / (4 * n * n)) ** 0.5)
+    return (centre - margin) / denom
 
 
 def levenshtein(a: str, b: str) -> int:
@@ -154,26 +179,40 @@ def evaluate(model, processor, fonts: dict[str, str], height: int,
             c[1] += 1
         result[label] = {
             "acc": hits / max(1, len(spans)),
+            "hits": hits,
+            "n": len(spans),
+            "acc_lo": wilson_lower(hits, len(spans)),
             "cer": cer_num / max(1, cer_den),
             "by_class": {k: v[0] / v[1] for k, v in sorted(by_class.items())},
-            "n": len(spans),
         }
     return result
 
 
 def select_winner(rows: list[dict]) -> dict | None:
-    """The constrained minimisation: cheapest passing config.
+    """The constrained minimisation: cheapest config meeting both constraints.
 
-    Ties on visual-token count break toward higher accuracy, so a free
-    improvement is never discarded. Returns None when nothing passes — that is
-    a gate outcome, not an error, and the caller decides between CONDITIONAL
-    and DROP (docs/GATES.md).
+    Two constraints, not one:
+
+    1. **Train legibility, at the CI lower bound.** A point estimate that grazes
+       the threshold is not evidence of clearing it.
+    2. **Held-out-font legibility.** Gate 2(a) evaluates the trained model on
+       held-out fonts. If the base model cannot read those fonts at the frozen
+       render config, that gate is floor-limited by OCR and measures nothing.
+
+    The second is a judgement call worth naming: it does look at the held-out
+    set. But it checks a *validity precondition of the measuring instrument*
+    rather than tuning model behaviour toward the split — closer to confirming
+    the test set isn't corrupted than to fitting on it. The alternative is
+    discovering in week 7 that Gate 2(a) was unmeasurable from the start.
+
+    Ties on visual-token count break toward higher accuracy. Returns None when
+    nothing qualifies — a gate outcome, not an error (docs/GATES.md).
     """
-    passing = [r for r in rows if r["passes"]]
-    if not passing:
+    qualifying = [r for r in rows if r["passes"] and r.get("held_ok", True)]
+    if not qualifying:
         return None
-    return min(passing, key=lambda r: (r["visual_tokens"],
-                                       -r["train"]["w1"]["acc"]))
+    return min(qualifying, key=lambda r: (r["visual_tokens"],
+                                          -r["train"]["w1"]["acc_lo"]))
 
 
 def main() -> int:
@@ -182,7 +221,9 @@ def main() -> int:
     ap.add_argument("--fonts", default="configs/fonts.yaml")
     ap.add_argument("--out", default="configs/render.yaml")
     ap.add_argument("--log", default="results/gate0_sweep.json")
-    ap.add_argument("--n", type=int, default=128, help="spans per config, per length")
+    ap.add_argument("--n", type=int, default=512, help="spans per config, per length. 512 is the smallest n whose "
+                         "CI can resolve a 0.97 point estimate against a "
+                         "0.95 threshold; 128 cannot.")
     ap.add_argument("--batch", type=int, default=32,
                     help="32 sits past the throughput knee (docs/COMPUTE.md)")
     ap.add_argument("--attn", default="flash_attention_2")
@@ -240,17 +281,25 @@ def main() -> int:
                          spans_1, spans_3, args.batch) if held_fonts else None)
         dt = time.perf_counter() - t0
 
-        passes = (train["w1"]["acc"] >= args.acc1 and
-                  train["w3"]["acc"] >= args.acc3)
+        # Constraint is checked at the CI lower bound, so a config cannot be
+        # frozen on a point estimate that merely grazes the threshold.
+        passes = (train["w1"]["acc_lo"] >= args.acc1 and
+                  train["w3"]["acc_lo"] >= args.acc3)
+        held_ok = (held is None or
+                   (held["w1"]["acc_lo"] >= args.acc1 and
+                    held["w3"]["acc_lo"] >= args.acc3))
         rows.append({"height": height, "min_pixels": min_px, "visual_tokens": cost,
                      "train": train, "held_out": held, "passes": passes,
-                     "seconds": round(dt, 1)})
+                     "held_ok": held_ok, "seconds": round(dt, 1)})
 
-        mark = "PASS" if passes else "    "
-        held_note = (f"   held-out {held['w1']['acc']:.2f}/{held['w3']['acc']:.2f}"
+        mark = "PASS " if passes else "     "
+        if passes and not held_ok:
+            mark = "train"          # clears on train fonts, fails held-out
+        held_note = (f"  held {held['w1']['acc']:.2f}/{held['w3']['acc']:.2f}"
                      if held else "")
         print(f"  h={height:<3} min_px={min_px:<6} {cost:>3} tok  "
-              f"1w {train['w1']['acc']:.2f}  3w {train['w3']['acc']:.2f}  "
+              f"1w {train['w1']['acc']:.3f} [{train['w1']['acc_lo']:.3f}]  "
+              f"3w {train['w3']['acc']:.3f} [{train['w3']['acc_lo']:.3f}]  "
               f"cer {train['w1']['cer']:.3f}  {mark}{held_note}  [{dt:.0f}s]")
 
         torch.cuda.empty_cache()
@@ -262,6 +311,20 @@ def main() -> int:
 
     win = select_winner(rows)
     if win is None:
+        train_only = [r for r in rows if r["passes"] and not r["held_ok"]]
+        if train_only:
+            print("\nNO CONFIG CLEARS BOTH CONSTRAINTS.")
+            print(f"  {len(train_only)} config(s) clear on training fonts but fail on")
+            print("  held-out fonts. Freezing one of those would leave Gate 2(a)")
+            print("  floor-limited by OCR on exactly the fonts it evaluates.")
+            print("  -> Widen the sweep upward (larger min_pixels, taller strips)")
+            print("     before considering a train-only config, and if you do take")
+            print("     one, record in DECISIONS.md that Gate 2(a) is compromised.")
+            for r in sorted(train_only, key=lambda r: r["visual_tokens"]):
+                print(f"     h={r['height']} min_px={r['min_pixels']} "
+                      f"{r['visual_tokens']} tok  held-out 1w "
+                      f"{r['held_out']['w1']['acc']:.3f}")
+            return 1
         best = max(rows, key=lambda r: r["train"]["w1"]["acc"])
         print("\nNO CONFIG CLEARS THE THRESHOLDS.")
         print(f"  best 1-word accuracy {best['train']['w1']['acc']:.2f} at "
@@ -276,15 +339,15 @@ def main() -> int:
 
     print(f"\nWINNER: height={win['height']}, min_pixels={win['min_pixels']}, "
           f"{win['visual_tokens']} visual tokens")
-    print(f"  train    1w {win['train']['w1']['acc']:.3f}  "
-          f"3w {win['train']['w3']['acc']:.3f}")
+    print(f"  train    1w {win['train']['w1']['acc']:.3f} "
+          f"[CI lower {win['train']['w1']['acc_lo']:.3f}]  "
+          f"3w {win['train']['w3']['acc']:.3f} "
+          f"[{win['train']['w3']['acc_lo']:.3f}]")
     if win["held_out"]:
-        print(f"  held-out 1w {win['held_out']['w1']['acc']:.3f}  "
-              f"3w {win['held_out']['w3']['acc']:.3f}   (reported, not selected on)")
-        if win["held_out"]["w1"]["acc"] < args.acc1 - 0.05:
-            print("  ! held-out fonts are much worse than train fonts. The config is")
-            print("    overfit to the training typefaces — widen the font set before")
-            print("    freezing, or Gate 2's held-out-font condition will fail.")
+        print(f"  held-out 1w {win['held_out']['w1']['acc']:.3f} "
+              f"[{win['held_out']['w1']['acc_lo']:.3f}]  "
+              f"3w {win['held_out']['w3']['acc']:.3f} "
+              f"[{win['held_out']['w3']['acc_lo']:.3f}]")
     print("  by word class (1 word, train):", {k: round(v, 2) for k, v in
                                                win["train"]["w1"]["by_class"].items()})
 
@@ -297,7 +360,13 @@ def main() -> int:
             "min_pixels": win["min_pixels"],
             "visual_tokens_per_span": win["visual_tokens"],
             "readback_train_1word": round(win["train"]["w1"]["acc"], 4),
+            "readback_train_1word_ci_lower": round(win["train"]["w1"]["acc_lo"], 4),
             "readback_train_3word": round(win["train"]["w3"]["acc"], 4),
+            "readback_train_3word_ci_lower": round(win["train"]["w3"]["acc_lo"], 4),
+            "readback_heldout_1word": (round(win["held_out"]["w1"]["acc"], 4)
+                                       if win["held_out"] else None),
+            "readback_heldout_3word": (round(win["held_out"]["w3"]["acc"], 4)
+                                       if win["held_out"] else None),
             "n_per_cell": args.n,
             "seed": args.seed,
         }, fh, sort_keys=False)

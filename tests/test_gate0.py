@@ -34,9 +34,11 @@ def _load(name: str):
 g0 = _load("gate0_sweep")
 
 
-def _row(tokens: int, acc1: float, acc3: float, passes: bool) -> dict:
-    return {"visual_tokens": tokens, "passes": passes,
-            "train": {"w1": {"acc": acc1}, "w3": {"acc": acc3}}}
+def _row(tokens: int, acc1: float, acc3: float, passes: bool,
+         held_ok: bool = True) -> dict:
+    return {"visual_tokens": tokens, "passes": passes, "held_ok": held_ok,
+            "train": {"w1": {"acc": acc1, "acc_lo": acc1},
+                      "w3": {"acc": acc3, "acc_lo": acc3}}}
 
 
 class TestStringMetrics:
@@ -183,3 +185,33 @@ class TestSelection:
     def test_failing_rows_are_never_selected(self):
         rows = [_row(1, 0.99, 0.99, False), _row(9, 0.95, 0.88, True)]
         assert g0.select_winner(rows)["visual_tokens"] == 9
+
+    def test_held_out_failure_disqualifies_a_train_passing_config(self):
+        # The exact shape of the first real sweep: the cheapest config cleared
+        # on training fonts but not on held-out ones, which would leave Gate
+        # 2(a) floor-limited by OCR.
+        rows = [_row(3, 0.95, 0.98, True, held_ok=False),
+                _row(8, 0.99, 0.98, True, held_ok=True)]
+        assert g0.select_winner(rows)["visual_tokens"] == 8
+
+    def test_returns_none_when_all_passing_configs_fail_held_out(self):
+        assert g0.select_winner([_row(3, 0.99, 0.99, True, held_ok=False)]) is None
+
+
+class TestWilson:
+    def test_lower_bound_is_below_the_point_estimate(self):
+        lo = g0.wilson_lower(122, 128)
+        assert 0.89 < lo < 0.92, lo          # 0.953 point -> ~0.90 lower
+
+    def test_tightens_with_more_samples(self):
+        assert g0.wilson_lower(970, 1000) > g0.wilson_lower(97, 100)
+
+    def test_n128_cannot_resolve_a_grazing_point_estimate(self):
+        # 0.953 at n=128 does not clear a 0.95 threshold at the lower bound.
+        assert g0.wilson_lower(122, 128) < 0.95
+
+    def test_n512_resolves_a_097_point_estimate(self):
+        assert g0.wilson_lower(round(0.97 * 512), 512) >= 0.95
+
+    def test_degenerate_n_is_zero_not_a_crash(self):
+        assert g0.wilson_lower(0, 0) == 0.0

@@ -32,7 +32,17 @@ height and `min_pixels` jointly; the smoke test reports visual-token count per c
 
 **Run it with:** `python scripts/gate0_sweep.py --model <base-model>`
 
-**Metric:** exact-match read-back accuracy, case- and wrapping-punctuation-insensitive.
+**Metric:** exact-match read-back accuracy, case- and wrapping-punctuation-insensitive,
+judged at the **lower bound of the 95% Wilson interval** rather than the point
+estimate. A point estimate that grazes the threshold is not evidence of clearing it:
+at n=128, 0.953 carries an interval of [0.90, 0.98]. Default n is 512, the smallest
+that can resolve a 0.97 measurement against a 0.95 threshold.
+
+**Second constraint: the config must be legible on held-out fonts too.** Gate 2(a)
+evaluates the trained model on held-out fonts; if the base model cannot read them at
+the frozen render config, that condition is floor-limited by OCR and measures nothing.
+This checks a validity precondition of the instrument rather than tuning toward the
+split — but it does look at it, so it is stated here rather than left implicit.
 
 | Outcome | Threshold | Action |
 |---|---|---|
