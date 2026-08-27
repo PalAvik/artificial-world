@@ -9,6 +9,18 @@
 Arch / torch / attention backend are not bookkeeping: runs compared against each
 other must match on all three. See the hardware policy in `docs/GATES.md`.
 
+## Environment of record
+
+| Field | Value |
+|---|---|
+| Base model | `Qwen/Qwen3.5-2B` (`qwen3_5`, `Qwen3_5ForConditionalGeneration`, 2.21 B) |
+| Reference GPU | A100 80GB — all gated numbers |
+| torch | 2.13.0+cu130 |
+| Attention | flash_attention_2 |
+| Generational control | `Qwen3-VL-2B` |
+
+Any run departing from this row records the departure in its own row.
+
 ## Baselines (fill after Gate 1)
 
 | Tier | MSG mean | 95% CI | acc(V_T) | acc(V_I) | delta | n |

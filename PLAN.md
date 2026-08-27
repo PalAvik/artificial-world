@@ -267,22 +267,23 @@ main one, which is why searching for one turned up nothing. Only a checkpoint's 
 `config.json` says which variant it is, and `pipeline_tag` is uploader-set metadata
 that can disagree.
 
-**This is the first Gate 0 task, and it is one command:**
+**Resolved (2026-08-27):** `Qwen/Qwen3.5-2B` loads as
+`Qwen3_5ForConditionalGeneration` — 2.21 B parameters, 24 layers, d = 2048, and a
+working vision path. **It is the base model.** `Qwen3-VL-2B` becomes the generational
+control rather than the workhorse, and the project no longer needs a separate
+text-only ablation checkpoint: the same architecture exposes `Qwen3_5TextConfig`, so
+the text-only baseline is a config variant of the same weights family rather than a
+different model.
+
+To re-check this, or to check any other candidate:
 
 ```bash
 python scripts/find_model.py --inspect Qwen/Qwen3.5-2B --inspect Qwen/Qwen3-VL-2B-Instruct
 ```
 
-- If `Qwen/Qwen3.5-2B` reports `qwen3_5` **with** a `vision_config` → **prefer it as
-  the base model.** Newest generation at the right size, and `Qwen3-VL-2B` becomes the
-  generational control rather than the workhorse.
-- If it reports `qwen3_5_text` → base on **`Qwen3-VL-2B`** (right size, native
-  interleaved context, strong OCR, which matters a great deal for Tier B), and keep
-  `Qwen3.5-2B` as the **text-only ablation baseline** — useful for isolating what the
-  vision tower contributes versus what the LM already does with rendered text.
-
-Either way, record the resolved id and `model_type` in `results/RESULTS.md` before any
-run: the base model is part of every number the project reports.
+`qwen3_5` with a `vision_config` means it sees; `qwen3_5_text` means it does not.
+Record the resolved id and `model_type` in `results/RESULTS.md` before any run — the
+base model is part of every number the project reports.
 
 **Phase 3 (generation)** would need either a discrete visual tokenizer and decoder
 bolted onto the VLM, or a unified any-to-any base — but pixel generation is descoped
