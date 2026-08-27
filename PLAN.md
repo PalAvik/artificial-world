@@ -239,6 +239,29 @@ not word class (function 1.00, abstract 1.00, concrete 0.91, rare/long 0.91), so
 an unconditioned class comparison would report OCR difficulty as if it were a
 representational gap.
 
+### 5.3b The forced choice needs a span-free floor
+
+Read-back only generalises to Tier B — there is nothing to transcribe in a
+relation diagram — so the per-tier validity check is a two-alternative forced
+choice over the span, asked identically of both views and scored by likelihood.
+
+That check is only readable against a third view in which the span is blanked in
+*both* modalities. Same contexts, same distractors, no span. Chance (0.5) is the
+wrong reference: the distractors come from the same word class as the true span
+but the contexts still constrain the answer, so a model can score well above
+chance without recovering anything from the substituted position.
+
+Concretely, the first three Phase 1 runs reported Tier B image accuracy *above*
+text accuracy, which cannot happen if both views are recovering the span, and
+happens easily if neither is. Every forced-choice number is therefore reported
+against the span-free floor, and a tier whose image view fails to clear that
+floor by the validity margin is marked INVALID regardless of its MSG.
+
+Options are scored as PMI against a null context — `logP(opt | context) −
+logP(opt | question alone)` — because raw likelihood lets an option's
+unconditional frequency compete with the in-context evidence, and the same null
+score is used for all three views so the comparison stays about the views.
+
 ### 5.4 Informativeness probe — the anti-collapse control
 Invariance is trivially maximized by mapping everything to a constant. Guard against it:
 train a linear probe on `h` at the merge position to recover the identity of the substituted

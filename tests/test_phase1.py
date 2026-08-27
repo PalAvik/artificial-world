@@ -21,7 +21,6 @@ from pathlib import Path
 
 import pytest
 import torch
-from PIL import Image
 
 from freeflow.data import tier_b, views
 from freeflow.data.render import FontSet, RenderConfig
@@ -387,6 +386,27 @@ class TestForcedChoice:
             image=functional.ChoiceResult(0.88, 256))
         assert good.task_sanity() is None and good.validity() is None
 
+    def test_flags_a_choice_that_is_decidable_without_the_span(self):
+        """The control the first three Phase 1 runs did not have. If the blanked
+        view scores what the text view scores, both views are riding on the
+        context and the delta is not about the substitution at all."""
+        hollow = functional.FunctionalResult(
+            text=functional.ChoiceResult(0.90, 256),
+            image=functional.ChoiceResult(0.98, 256),
+            ablated=functional.ChoiceResult(0.88, 256))
+        assert "decidable from the context alone" in hollow.task_sanity()
+
+    def test_the_floor_replaces_chance_once_it_is_measured(self):
+        """An image view well above chance can still be at the floor: same-group
+        distractors are not indistinguishable without the span, so chance
+        understates what the context gives away."""
+        r = functional.FunctionalResult(
+            text=functional.ChoiceResult(0.95, 256),
+            image=functional.ChoiceResult(0.80, 256),
+            ablated=functional.ChoiceResult(0.75, 256))
+        assert r.image_above_chance > 0.15 and r.image_above_floor < 0.15
+        assert "span-free floor" in r.validity()
+
     def test_flags_an_image_view_stuck_at_chance(self):
         """The Tier C failure the first Phase 1 run could not see: a diagram the
         model cannot decode still yields a confident MSG."""
@@ -401,15 +421,65 @@ class TestForcedChoice:
             image=functional.ChoiceResult(0.84, 100))
         assert ok.validity() is None
 
+    def test_the_ablated_view_blanks_the_span_in_both_modalities(self, stack,
+                                                                 corpus):
+        """The floor has to remove the span, not move it: scored through the
+        text path with a blank, so no image carries it either."""
+        model, proc = stack
+        r = functional.forced_choice(model, proc, corpus[:6], device="cpu")
+        assert r.ablated is not None and r.ablated.n == 6
+        assert functional.BLANK not in corpus[0].span_text
+
     def test_option_length_is_measured_in_context_not_standalone(self, stack,
                                                                  corpus):
         """Tokenising an option on its own can disagree with how it tokenises
         glued to the preceding text, drifting the scored positions off it."""
         model, proc = stack
-        scores = functional._option_logprobs(
+        scores = functional._option_scores(
             model, proc, corpus[:4], "text",
-            [it.span_text for it in corpus[:4]], device="cpu")
+            [it.span_text for it in corpus[:4]], device="cpu", neutral_cache={})
         assert scores.shape == (4,) and torch.isfinite(scores).all()
+
+    def test_the_neutral_baseline_is_subtracted_from_every_score(self, stack,
+                                                                 corpus):
+        """PMI, not raw likelihood. Without the null-context term an option's
+        unconditional frequency competes with the in-context evidence, which is
+        how a rare true span loses to a common distractor with the answer
+        written out in front of the model."""
+        model, proc = stack
+        items, opts = corpus[:4], [it.span_text for it in corpus[:4]]
+        cache = {}
+        pmi = functional._option_scores(model, proc, items, "text", opts,
+                                        device="cpu", neutral_cache=cache)
+        neutral = torch.tensor([cache[o] for o in opts])
+        raw = functional._option_scores(
+            model, proc, items, "text", opts, device="cpu",
+            neutral_cache={o: 0.0 for o in opts})
+        assert torch.allclose(pmi, raw - neutral, atol=1e-5)
+
+    def test_the_neutral_score_is_computed_once_per_option_string(self, stack,
+                                                                  corpus):
+        """Cached, and the same cache is handed to both views — a calibration
+        term that differed by modality would put the delta back where it was."""
+        model, proc = stack
+        items = corpus[:4]
+        opts = [items[0].span_text] * 4
+        cache = {}
+        calls = []
+        real = functional._logprob_of_tail
+
+        def counting(m, inputs, n_full, k):
+            calls.append(k)
+            return real(m, inputs, n_full, k)
+
+        functional._logprob_of_tail = counting
+        try:
+            functional._option_scores(model, proc, items, "text", opts,
+                                      device="cpu", neutral_cache=cache)
+        finally:
+            functional._logprob_of_tail = real
+        # Four conditioned scores, one neutral score for the single option.
+        assert len(cache) == 1 and len(calls) == 5
 
 
 class TestTierAwareValidity:

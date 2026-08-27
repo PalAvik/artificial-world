@@ -20,8 +20,24 @@ points` on a matched task. The same forced choice, asked of both views, is that
 task.
 
 Scoring is by likelihood over the two options rather than by parsing generated
-text: a 2-alternative choice scored by argmax logprob has no refusals, no
-formatting drift, and no prompt-following confound between modalities.
+text: a 2-alternative choice has no refusals, no formatting drift, and no
+prompt-following confound between modalities.
+
+**An ablated view is scored alongside the two real ones**: the same choice with
+the span replaced by a blank, so neither modality carries it. It is the floor
+the other two have to clear. Without it, a high accuracy is unreadable — the
+first three Phase 1 runs reported image *above* text on Tier B, which cannot
+happen if both views are recovering the span, and can happen easily if neither
+is and the context alone decides. Chance is the wrong floor for that reason:
+chance assumes the options are indistinguishable without the span, and same-group
+distractors are not.
+
+**Scored as PMI against a null context**, not as raw likelihood. Raw likelihood
+lets an option's unconditional frequency compete with the in-context evidence: a
+rare true span loses to a common distractor even when the answer is written in
+the context. Subtracting `logP(option | question alone)` cancels that, and the
+same null score is used for both views so the delta stays a statement about the
+modalities rather than about the vocabulary.
 """
 from __future__ import annotations
 
@@ -39,6 +55,11 @@ from .runner import build_view
 # written out — so the two views were not answering the same question and the
 # delta measured the mismatch rather than the substitution.
 QUESTION = " The missing word is"
+
+# What the span is replaced by in the ablated view. A blank rather than a
+# deletion: removing it would change the sentence's shape as well as its
+# content, and the floor is meant to isolate the content.
+BLANK = "___"
 
 
 @dataclass
@@ -58,10 +79,22 @@ class FunctionalResult:
 
     text: ChoiceResult
     image: ChoiceResult
+    # The span-free floor. Optional so a caller can construct a result without
+    # it, but Phase 1 always measures it.
+    ablated: ChoiceResult | None = None
 
     @property
     def delta(self) -> float:
         return self.text.accuracy - self.image.accuracy
+
+    @property
+    def floor(self) -> float:
+        """What the choice scores with no span in either modality."""
+        return self.ablated.accuracy if self.ablated else self.image.chance
+
+    @property
+    def image_above_floor(self) -> float:
+        return self.image.accuracy - self.floor
 
     @property
     def image_above_chance(self) -> float:
@@ -76,9 +109,17 @@ class FunctionalResult:
         beating text — is the same signal, and was how the first run's
         modality-specific phrasing was caught.
         """
-        # Negative delta first: it is the more specific diagnosis. It says the
-        # two views are answering different questions, where a low text score
-        # alone only says something is wrong.
+        # The floor first: it subsumes the others. If the choice is decidable
+        # without the span, then every accuracy here is a statement about the
+        # contexts and the distractors, and the delta between two views of a
+        # span neither view needs is not interpretable at all.
+        if self.ablated is not None and self.text.accuracy - self.floor < 0.05:
+            return (f"the span-free view scores {self.floor:.3f} against a text "
+                    f"view of {self.text.accuracy:.3f} — the choice is decidable "
+                    "from the context alone, so neither view is being scored on "
+                    "the span and the delta means nothing")
+        # Then the negative delta: more specific than a low text score, which
+        # only says something is wrong.
         if self.delta < -0.05:
             return (f"delta is {self.delta:+.3f}: the image view beats the text "
                     "view, which cannot be right when the text view can simply "
@@ -95,16 +136,21 @@ class FunctionalResult:
         broken = self.task_sanity()
         if broken:
             return broken
-        if self.image_above_chance < margin:
-            return (f"image view scores {self.image.accuracy:.3f} against chance "
-                    f"{self.image.chance:.2f} — the model cannot recover the span "
-                    "from the image, so this tier's MSG measures the instrument "
-                    "rather than the representation")
+        if self.image_above_floor < margin:
+            label = ("the span-free floor" if self.ablated is not None
+                     else "chance")
+            return (f"image view scores {self.image.accuracy:.3f} against "
+                    f"{label} {self.floor:.2f} — the model cannot recover the "
+                    "span from the image, so this tier's MSG measures the "
+                    "instrument rather than the representation")
         return None
 
     def __str__(self) -> str:
-        return (f"text {self.text} | image {self.image} | "
+        base = (f"text {self.text} | image {self.image} | "
                 f"delta {self.delta:+.3f}")
+        if self.ablated is not None:
+            base += f" | span-free floor {self.ablated.accuracy:.3f}"
+        return base
 
 
 def make_distractors(items: Sequence[SpanItem], seed: int = 0) -> list[str]:
@@ -128,18 +174,64 @@ def make_distractors(items: Sequence[SpanItem], seed: int = 0) -> list[str]:
 
 
 @torch.no_grad()
-def _option_logprobs(model, processor, items: Sequence[SpanItem], modality: str,
-                     options: Sequence[str], device: str) -> torch.Tensor:
-    """Mean per-token logprob of each option, appended after the item's suffix.
+def _logprob_of_tail(model, inputs, n_full: int, k: int) -> float:
+    """Mean logprob of the final `k` tokens of a sequence."""
+    out = model(**inputs, output_hidden_states=False)
+    logprobs = out.logits[0].float().log_softmax(dim=-1)
+    # Position i predicts token i+1, so tokens at [n-k, n) are scored by the
+    # logits at [n-k-1, n-1).
+    idx = torch.arange(n_full - k - 1, n_full - 1, device=logprobs.device)
+    target = inputs["input_ids"][0, n_full - k:n_full]
+    return float(logprobs[idx, target].mean())
 
-    Length-normalised, so a shorter option is not favoured for having fewer
-    tokens to be wrong about.
+
+@torch.no_grad()
+def _neutral_logprob(model, processor, option: str, device: str,
+                     cache: dict) -> float:
+    """The option's plausibility given the question frame alone.
+
+    This is the calibration term. Without it the score is dominated by how
+    common the option is: a rare true span ("pulchritude") loses to a frequent
+    distractor ("justice") even with the answer written in the context, because
+    the frequency gap outweighs the in-context evidence. Length-normalising the
+    mean does not cancel that — only conditioning on a null context does.
+
+    Identical for both views by construction, so subtracting it leaves the two
+    modalities comparable, which is the whole point of the delta.
+    """
+    if option in cache:
+        return cache[option]
+
+    def encode(text: str):
+        enc = processor(text=[text], padding=True, return_tensors="pt")
+        enc = {k: (v.to(device) if torch.is_tensor(v) else v)
+               for k, v in enc.items()}
+        return enc, int(enc["attention_mask"][0].sum())
+
+    # Differenced through the processor, for the reason `_option_scores` gives:
+    # tokenising the question on its own can disagree with how it tokenises
+    # with the option appended, and the processor may add specials that a bare
+    # tokenizer call does not.
+    _, n_short = encode(QUESTION)
+    full, n_full = encode(QUESTION + " " + option)
+    k = n_full - n_short
+    cache[option] = _logprob_of_tail(model, full, n_full, k) if k > 0 else 0.0
+    return cache[option]
+
+
+@torch.no_grad()
+def _option_scores(model, processor, items: Sequence[SpanItem], modality: str,
+                   options: Sequence[str], device: str,
+                   neutral_cache: dict) -> torch.Tensor:
+    """Pointwise mutual information of each option with its context.
+
+        score = logP(option | context) - logP(option | question alone)
 
     **The option's token count is obtained by differencing**, not by tokenising
     the option on its own. Tokenisation is not compositional: an option glued to
     the preceding text can merge across the boundary, so standalone ids need not
-    match the ids actually in the sequence, and the scored positions would drift
-    off the option silently. Same hazard the merge index avoids the same way.
+    match the ids in the sequence, and the scored positions would drift off the
+    option silently. Same hazard the merge index avoids the same way.
     """
     scores = []
     for item, opt in zip(items, options):
@@ -161,13 +253,9 @@ def _option_logprobs(model, processor, items: Sequence[SpanItem], modality: str,
             scores.append(float("-inf"))
             continue
 
-        out = model(**vb_full.inputs, output_hidden_states=False)
-        logprobs = out.logits[0].float().log_softmax(dim=-1)
-        # Position i predicts token i+1, so the k option tokens at
-        # [n_full-k, n_full) are scored by logits at [n_full-k-1, n_full-1).
-        idx = torch.arange(n_full - k - 1, n_full - 1, device=logprobs.device)
-        target = vb_full.inputs["input_ids"][0, n_full - k:n_full]
-        scores.append(float(logprobs[idx, target].mean()))
+        conditioned = _logprob_of_tail(model, vb_full.inputs, n_full, k)
+        neutral = _neutral_logprob(model, processor, opt, device, neutral_cache)
+        scores.append(conditioned - neutral)
     return torch.tensor(scores)
 
 
@@ -180,14 +268,27 @@ def forced_choice(model, processor, items: Sequence[SpanItem],
     This is the slow path of Phase 1 and is worth capping with `--functional-n`.
     """
     distractors = make_distractors(items, seed)
+    # One neutral score per distinct option string, shared across both views so
+    # the calibration cannot differ by modality.
+    neutral_cache: dict = {}
+    blanked = [SpanItem(**{**it.__dict__, "span_text": BLANK,
+                           "span_paraphrase": BLANK}) for it in items]
+    views = {"text": (items, "text"), "image": (items, "image"),
+             # Scored through the *text* path: with the span blanked there is
+             # no image to substitute, and the point is to remove the span from
+             # both modalities at once.
+             "ablated": (blanked, "text")}
+
     results = {}
-    for modality in ("text", "image"):
-        true_lp = _option_logprobs(model, processor, items, modality,
-                                   [it.span_text for it in items], device)
-        false_lp = _option_logprobs(model, processor, items, modality,
-                                    distractors, device)
+    for name, (view_items, modality) in views.items():
+        true_lp = _option_scores(model, processor, view_items, modality,
+                                 [it.span_text for it in items], device,
+                                 neutral_cache)
+        false_lp = _option_scores(model, processor, view_items, modality,
+                                  distractors, device, neutral_cache)
         correct = (true_lp > false_lp).tolist()
-        results[modality] = ChoiceResult(
+        results[name] = ChoiceResult(
             accuracy=sum(correct) / max(1, len(correct)), n=len(correct),
             correct=correct)
-    return FunctionalResult(text=results["text"], image=results["image"])
+    return FunctionalResult(text=results["text"], image=results["image"],
+                            ablated=results["ablated"])

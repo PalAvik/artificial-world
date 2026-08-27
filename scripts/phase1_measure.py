@@ -136,6 +136,8 @@ def measure_tier(model, processor, items, batch: int, layers, device: str,
             "text_accuracy": fc.text.accuracy,
             "image_accuracy": fc.image.accuracy,
             "delta": fc.delta,
+            "ablated_accuracy": fc.ablated.accuracy if fc.ablated else None,
+            "image_above_floor": fc.image_above_floor,
             "n": fc.text.n,
             "chance": fc.image.chance,
             "validity_warning": warning,
@@ -226,8 +228,11 @@ def _tier_header(res: dict) -> str:
     else:
         parts.append("read-back n/a")
     f = res["functional"]
-    parts.append(f"forced choice: text {f['text_accuracy']:.3f} / "
-                 f"image {f['image_accuracy']:.3f}, delta {f['delta']:+.3f}")
+    fc = (f"forced choice: text {f['text_accuracy']:.3f} / "
+          f"image {f['image_accuracy']:.3f}, delta {f['delta']:+.3f}")
+    if f.get("ablated_accuracy") is not None:
+        fc += f", span-free floor {f['ablated_accuracy']:.3f}"
+    parts.append(fc)
     parts.append(f"{res['seconds']}s")
     line = " · ".join(parts)
     if f.get("validity_warning"):
