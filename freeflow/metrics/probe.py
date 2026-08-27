@@ -25,6 +25,7 @@ class ProbeResult:
     n_train: int
     n_test: int
     n_classes: int
+    warning: str | None = None       # set when the split is too thin to mean anything
 
     @property
     def above_chance(self) -> float:
@@ -35,9 +36,10 @@ class ProbeResult:
         return (self.accuracy - self.chance) / (1.0 - self.chance)
 
     def __str__(self) -> str:
-        return (f"probe {self.accuracy:.3f} (chance {self.chance:.3f}, "
+        base = (f"probe {self.accuracy:.3f} (chance {self.chance:.3f}, "
                 f"{self.above_chance:+.3f} of headroom, "
                 f"{self.n_classes} classes, n={self.n_test})")
+        return f"{base}  ! {self.warning}" if self.warning else base
 
 
 def fit_probe(
@@ -100,9 +102,22 @@ def fit_probe(
     _, counts = np.unique(y[test_idx], return_counts=True)
     chance = float(counts.max() / counts.sum())
 
+    # Classes with a single member cannot be held out, so a corpus with almost
+    # as many spans as items leaves a test split of one or two — where accuracy
+    # and chance are both 1.0 and the number says nothing. Seen for real on a
+    # 120-item corpus with 119 unique spans.
+    warning = None
+    scored_classes = int(np.unique(y[test_idx]).size)
+    if test_idx.size < 20 or scored_classes < 2:
+        warning = (f"degenerate split: {test_idx.size} test items over "
+                   f"{scored_classes} scored class(es). Needs several items per "
+                   "span — raise n or shrink the span vocabulary.")
+    elif chance > 0.9:
+        warning = f"chance is {chance:.2f}; the test split is nearly single-class"
+
     return ProbeResult(accuracy=acc, chance=chance, n_train=int(train_idx.size),
                        n_test=int(test_idx.size),
-                       n_classes=int(np.unique(y).size))
+                       n_classes=int(np.unique(y).size), warning=warning)
 
 
 def collapse_check(msg_now: float, msg_base: float,

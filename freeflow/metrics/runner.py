@@ -29,7 +29,7 @@ from typing import Sequence
 
 import torch
 
-from ..data.views import SpanItem  # noqa: F401  (re-exported)
+from ..data.views import SpanItem, batch_by_suffix  # noqa: F401
 from .distribution import StreamingJSD, logits_at
 
 
@@ -203,8 +203,10 @@ def capture(model, processor, items: Sequence[SpanItem], batch: int = 32,
     results = {k: CaptureResult() for k in views}
     chosen: list[int] | None = list(layers) if layers is not None else None
 
-    for start in range(0, len(items), batch):
-        chunk = list(items[start:start + batch])
+    # Batched by suffix, not by position: build_view locates merge positions as
+    # len(sequence) - len(suffix_tokens), so a batch mixing suffix lengths would
+    # misalign every index. Item order in the results follows these batches.
+    for chunk in batch_by_suffix(items, batch):
         primary_logits = {}
 
         for key, (modality, variant) in views.items():

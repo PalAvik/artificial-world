@@ -231,6 +231,19 @@ class TestProbe:
         r = probe.fit_probe(torch.randn(100, 4), labels, seed=0)
         assert r.chance > 0.6            # majority baseline, not 0.5
 
+    def test_flags_a_degenerate_split_instead_of_reporting_1_point_0(self):
+        """Seen for real: a 120-item corpus with 119 unique spans left a test
+        split of one item, where accuracy and chance are both 1.0 and the
+        number is meaningless."""
+        labels = np.arange(60)                 # every class has exactly one member
+        labels = np.concatenate([labels, [0]])  # ...except one
+        r = probe.fit_probe(torch.randn(61, 6), labels, seed=0)
+        assert r.warning is not None and "degenerate" in r.warning
+
+    def test_no_warning_when_every_class_is_well_populated(self):
+        labels = np.repeat(np.arange(6), 30)
+        assert probe.fit_probe(torch.randn(180, 6), labels, seed=0).warning is None
+
     def test_rejects_mismatched_labels(self):
         with pytest.raises(ValueError, match="hidden states for"):
             probe.fit_probe(torch.randn(10, 4), np.arange(9))

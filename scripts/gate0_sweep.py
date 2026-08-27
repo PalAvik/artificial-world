@@ -39,6 +39,11 @@ import torch
 import yaml
 from PIL import Image, ImageDraw, ImageFont
 
+# Canonical implementations live in the package, so the read-back that chose the
+# render config and the read-back that conditions the Phase 1 metrics cannot
+# drift apart.
+from freeflow.metrics.cycle import levenshtein, normalise, read_back
+
 # Word classes chosen to preview H2 (does the gap track abstractness and
 # function-word status rather than length?) while keeping Gate 0 self-contained:
 # no dataset download blocks week 1.
@@ -76,24 +81,6 @@ def wilson_lower(hits: int, n: int, z: float = 1.96) -> float:
     return (centre - margin) / denom
 
 
-def levenshtein(a: str, b: str) -> int:
-    if len(a) < len(b):
-        a, b = b, a
-    prev = list(range(len(b) + 1))
-    for i, ca in enumerate(a, 1):
-        cur = [i]
-        for j, cb in enumerate(b, 1):
-            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)))
-        prev = cur
-    return prev[-1]
-
-
-def normalise(s: str) -> str:
-    """Read-back is a transcription task, so judge it as one: case and
-    surrounding punctuation are not what Tier B is testing."""
-    return " ".join(s.strip().strip('"\'`.,:;!?').lower().split())
-
-
 def make_spans(n: int, n_words: int, rng: random.Random) -> list[tuple[str, str]]:
     """Return (text, class) pairs, balanced across word classes."""
     classes = list(WORD_CLASSES)
@@ -127,30 +114,6 @@ def visual_token_cost(processor, img: Image.Image) -> int:
         lens.append(processor(text=[text], images=images,
                               return_tensors="pt")["input_ids"].shape[1])
     return lens[1] - lens[0]
-
-
-@torch.no_grad()
-def read_back(model, processor, images: list[Image.Image], batch: int) -> list[str]:
-    """Ask the model to transcribe each strip. Greedy, so the measurement is
-    of the model rather than of sampling noise."""
-    prompt = ("Transcribe the text in this image exactly. "
-              "Reply with only the text, nothing else.")
-    outputs = []
-    for i in range(0, len(images), batch):
-        chunk = images[i:i + batch]
-        # One template for the whole chunk: the image is a placeholder that the
-        # processor expands per-image, so the rendered text is identical
-        # regardless of which strip is used to build it.
-        msgs = [{"role": "user", "content": [
-            {"type": "image", "image": chunk[0]}, {"type": "text", "text": prompt}]}]
-        text = processor.apply_chat_template(msgs, tokenize=False,
-                                             add_generation_prompt=True)
-        inputs = processor(text=[text] * len(chunk), images=chunk,
-                           padding=True, return_tensors="pt").to(model.device)
-        gen = model.generate(**inputs, max_new_tokens=24, do_sample=False)
-        new = gen[:, inputs["input_ids"].shape[1]:]
-        outputs.extend(processor.batch_decode(new, skip_special_tokens=True))
-    return outputs
 
 
 def evaluate(model, processor, fonts: dict[str, str], height: int,
