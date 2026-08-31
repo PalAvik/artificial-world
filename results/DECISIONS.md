@@ -422,6 +422,51 @@ written first. The pattern is not bad luck. The instrument now refuses to issue
 a verdict from an under-powered or row-split fit, but the general lesson is that
 a validity check belongs in the same commit as the metric it guards.
 
+**2026-08-31, grouped-fold run at 8000 distinct spans.**
+
+| null | Tier B MSG | 95% CI | share of gap | fit | status |
+|---|---|---|---|---|---|
+| raw | 3.485 | [3.460, 3.510] | — | — | valid |
+| offset-free | 3.331 | [3.310, 3.351] | 6% | — | valid |
+| rotation-free | **1.262** | [1.252, 1.272] | 89% | orthogonal, 8000 spans, 6.2 rows/dim | **valid** |
+| linear-map-free | 0.858 | [0.851, 0.865] | 106% | ridge 100, control retained **8%** | **withdrawn** |
+
+**The linear number is not a measurement.** Ridge 100 was selected, which
+predicts roughly the text centroid for every input: the mapped within-image
+control fell to 0.0069 against 0.0817 unmapped. Only the image half of the
+denominator passes through the map, so the collapse shrank numerator and
+denominator together and read as the gap vanishing. Selecting the penalty by
+out-of-fold distance alone is won by exactly that degenerate map. Selection is
+now constrained to penalties retaining at least half the within-modality control
+distance, on the principle that a change of basis is invertible — it moves
+structure, it does not remove it.
+
+**I called the drop on this number before the check ran, and the call was
+premature.** The condition looked met on its face; the number was contaminated.
+
+**Second failure in the same turn, and the worse one: the check that caught this
+had itself been dead.** `show_offset.py` read `fit` and the denominator means
+off a null's `overall` sub-dict, where the driver does not write them, so the
+leakage, under-determination and collapse guards were all inert. A report with
+no warnings was indistinguishable from a report with no checks, and I cited the
+absence of warnings as evidence the run was clean. That is the fourth validity
+failure here and the second where the *instrument's own guard* was the broken
+part. Guards are now printed as positive evidence on every run — fit kind,
+folds, whether folds held out distinct spans or merely rows, rows per dimension,
+selected penalty, control retention — and `tests/test_show_offset.py` drives the
+reporter over synthetic results and asserts each guard fires. **A guard with no
+test that it can fire is not a guard.**
+
+**What stands.** Rotation-free MSG is valid: an orthogonal map preserves angles
+by construction and cannot collapse, its folds held out 8000 distinct spans at
+6.2 rows per dimension. So a *rotation* removes 89% of the gap and leaves
+**1.262, CI [1.252, 1.272] — entirely above the 1.25 threshold, but only just**.
+The gap is overwhelmingly a matter of orientation, and what remains after the
+best rotation sits at the edge of the pre-registered line.
+
+**Gate 1 is not decided.** The drop rule turns on the linear-map number, which
+does not yet exist. The re-run under the collapse constraint produces it.
+
 ## Gate 2 — Is it trainable, and is the effect real? · due end of Week 7
 _Not yet reached._
 

@@ -146,3 +146,8 @@ matched-compute baseline · invariance–informativeness frontier figure ·
    wrong is not a clerical matter.
 3. **`RESULTS.md` sat empty through four runs** despite the recording rule
    saying no run starts until the previous row is filled.
+4. **Three validity failures where the number was confident and wrong** — Tier
+   C's read-back, the forced choice's floor, the map's row-wise folds — and a
+   fourth where the *guard itself* was dead code and its silence was cited as
+   evidence. Every guard now prints positive evidence, and every guard has a
+   test that it can fire.

@@ -90,6 +90,28 @@ class MapFit:
     dim: int = 0
     ridge: float = 0.0
     n_groups: int = 0
+    # Mapped within-modality control distance as a fraction of its unmapped
+    # value. 1.0 for an orthogonal map, which preserves angles by construction.
+    control_retention: float = 1.0
+
+    def collapsed(self, need: float = 0.5) -> str | None:
+        """None when the map re-expressed the source rather than discarding it.
+
+        A change of basis is invertible: it moves structure, it does not remove
+        it. A ridge map with a large penalty can instead predict roughly the
+        target's centroid for every input, which minimises mean distance to the
+        target while destroying the within-modality structure it was supposed to
+        carry across. That is not a witness for the null, and it is doubly
+        misleading for a ratio, because only the image half of the denominator
+        passes through the map: the collapse shrinks the denominator and the
+        numerator together and the result looks like a vanished gap.
+        """
+        if self.control_retention >= need:
+            return None
+        return (f"the map retains {self.control_retention:.0%} of the "
+                "within-modality control distance. It is discarding structure "
+                "rather than re-expressing it, so it does not witness a change "
+                "of basis")
 
     def leakage(self) -> str | None:
         """None when the folds held out content rather than merely rows."""
@@ -187,7 +209,8 @@ def cross_validated_map(source: torch.Tensor, target: torch.Tensor,
                         also: Sequence[torch.Tensor] = (),
                         kind: str = "orthogonal", folds: int = 5,
                         ridge: float | Sequence[float] = RIDGE_GRID,
-                        seed: int = 0, groups: Sequence | None = None
+                        seed: int = 0, groups: Sequence | None = None,
+                        preserve: float = 0.5
                         ) -> tuple[torch.Tensor, list[torch.Tensor], MapFit]:
     """Map `source` toward `target`, every row predicted out-of-fold.
 
@@ -261,7 +284,12 @@ def cross_validated_map(source: torch.Tensor, target: torch.Tensor,
     grid = ([0.0] if kind == "orthogonal"
             else ([ridge] if isinstance(ridge, (int, float)) else list(ridge)))
 
-    best = None
+    # Baseline within-modality spread, before any mapping. The selected map has
+    # to preserve most of it; see MapFit.collapsed.
+    base_ctl = (float(cosine_distance(source, also[0]).mean())
+                if also else 0.0)
+
+    best = best_any = None
     for lam in grid:
         out = torch.empty_like(source)
         out_also = [torch.empty_like(x) for x in also]
@@ -272,14 +300,22 @@ def cross_validated_map(source: torch.Tensor, target: torch.Tensor,
             for j, x in enumerate(also):
                 out_also[j][test_idx] = (x[test_idx] - mean_s) @ A + mean_t
         score = float(cosine_distance(out, target).mean())
-        if best is None or score < best[0]:
-            best = (score, out, out_also, float(lam))
+        retention = (float(cosine_distance(out, out_also[0]).mean()) / base_ctl
+                     if base_ctl > 0 else 1.0)
+        cand = (score, out, out_also, float(lam), retention)
+        # Track the best overall separately from the best *non-collapsing* one,
+        # so a grid on which every penalty collapses still returns something
+        # the caller can inspect and reject.
+        if best_any is None or score < best_any[0]:
+            best_any = cand
+        if retention >= preserve and (best is None or score < best[0]):
+            best = cand
 
-    _, out, out_also, lam = best
+    _, out, out_also, lam, retention = best or best_any
     train_n = min(int(t.numel()) for t, _ in folds_idx)
     return out, out_also, MapFit(kind=kind, folds=folds, train_n=train_n,
                                  dim=int(source.shape[1]), ridge=lam,
-                                 n_groups=n_groups)
+                                 n_groups=n_groups, control_retention=retention)
 
 
 def linear_cka(a: torch.Tensor, b: torch.Tensor) -> float:

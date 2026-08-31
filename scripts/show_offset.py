@@ -111,9 +111,11 @@ def main() -> int:
                 print(f"    {'':<24}   fit: {fit.get('kind')}, "
                       f"{fit.get('folds')} folds, held out by {held}, "
                       f"{fit.get('rows_per_dim', 0):.1f} rows/dim, "
-                      f"ridge {fit.get('ridge')}")
+                      f"ridge {fit.get('ridge')}, "
+                      f"control retained {fit.get('control_retention', 1.0):.0%}")
 
-            warn = fit.get("underdetermined") if fit else None
+            warn = (fit.get("underdetermined") or fit.get("collapsed")) \
+                if fit else None
             if fit and not fit.get("n_groups"):
                 warn = warn or ("folds split rows rather than content — a map "
                                 "fitted this way memorises repeated spans")

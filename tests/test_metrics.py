@@ -516,3 +516,51 @@ class TestCrossValidatedMap:
     def test_refuses_to_fit_on_too_few_items(self):
         with pytest.raises(ValueError, match="at least"):
             geometry.cross_validated_map(torch.randn(3, 8), torch.randn(3, 8))
+
+    def test_a_collapsing_penalty_is_not_selected(self):
+        """The 2026-08-31 failure. Minimising distance to the target alone is
+        won by a map predicting its centroid for everything, which destroys the
+        structure a change of basis must preserve -- and shrinks the mapped half
+        of the MSG denominator along with the numerator."""
+        torch.manual_seed(0)
+        n, d = 600, 24
+        target = torch.randn(n, d)
+        source = torch.randn(n, d)                 # no linear relation at all
+        control = source + 0.15 * torch.randn(n, d)
+        groups = [f"g{i}" for i in range(n)]
+
+        _, _, fit = geometry.cross_validated_map(
+            source, target, also=[control], kind="linear", groups=groups)
+        assert fit.control_retention >= 0.5
+        assert fit.collapsed() is None
+
+        # With the constraint switched off, the heaviest penalty wins and takes
+        # the control down with it.
+        _, _, loose = geometry.cross_validated_map(
+            source, target, also=[control], kind="linear", groups=groups,
+            preserve=0.0)
+        assert loose.ridge >= fit.ridge
+
+    def test_an_orthogonal_map_cannot_collapse(self):
+        """Procrustes preserves angles, so rotation-free MSG is immune to the
+        failure that invalidated the linear number."""
+        torch.manual_seed(0)
+        n, d = 400, 16
+        target = torch.randn(n, d)
+        q, _ = torch.linalg.qr(torch.randn(d, d))
+        source = target @ q
+        control = (target + 0.1 * torch.randn(n, d)) @ q
+        _, _, fit = geometry.cross_validated_map(
+            source, target, also=[control], kind="orthogonal",
+            groups=[f"g{i}" for i in range(n)])
+        assert abs(fit.control_retention - 1.0) < 0.02
+        assert fit.collapsed() is None
+
+    def test_collapse_is_reported_when_no_penalty_survives(self):
+        """A grid on which every penalty collapses must return a rejectable
+        result, not silently pick the least-bad one."""
+        fit = geometry.MapFit(kind="linear", folds=5, train_n=6400, dim=2048,
+                              ridge=100.0, n_groups=8000,
+                              control_retention=0.08)
+        assert "retains 8%" in fit.collapsed()
+        assert "discarding structure" in fit.collapsed()

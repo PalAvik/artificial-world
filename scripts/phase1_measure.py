@@ -240,6 +240,7 @@ def measure_tier(model, processor, items, batch: int, layers, device: str,
         fit_warning = None
         if fit:
             fit_warning = (fit.leakage() or fit.underdetermined()
+                           or fit.collapsed()
                            or _implausible_map(d["cross"], d["within_text"],
                                                d["within_image"]))
         if fit_warning:
@@ -264,6 +265,8 @@ def measure_tier(model, processor, items, batch: int, layers, device: str,
                      "ridge": fit.ridge,
                      "rows_per_dim": fit.rows_per_dim,
                      "n_groups": fit.n_groups,
+                     "control_retention": fit.control_retention,
+                     "collapsed": fit.collapsed(),
                      "underdetermined": fit_warning} if fit else None),
         }
         if out[name]["denominator_warning"]:
