@@ -102,6 +102,17 @@ def run_one(model: str, out_dir: Path, args) -> tuple[str, float]:
             time.perf_counter() - t0)
 
 
+def _share(raw: float | None, null: float | None) -> float | None:
+    """Share of the *ratio* a null removes. Only for the offset null.
+
+    Convention-dependent, and reported anyway because the alternative for that
+    null is worse: see the note in `collect`.
+    """
+    if not raw or null is None or raw <= 1.0:
+        return None
+    return 1.0 - (null - 1.0) / (raw - 1.0)
+
+
 def _reduction(raw_cross: float | None, cross: float | None) -> float | None:
     """Fraction by which a null shrinks the cross-modal distance.
 
@@ -143,8 +154,20 @@ def summarise(rows: list[dict]) -> str:
            "both depend on the tokeniser, the processor's visual-token count "
            "and the hidden size.",
            "",
-           "| model | dim | read-back | raw MSG | raw cross | offset | isometry "
-           "| linear | valid |",
+           "The **offset** column is measured differently and is not on the "
+           "same scale as the other two.",
+           "That null centres both views, which inflates every distance — the "
+           "cross distance by 2.5x and the",
+           "image control by 5.6x on Tier B — so comparing its centred cross "
+           "distance with the uncentred one",
+           "would report the rescaling rather than the null. It therefore shows "
+           "the share of the *ratio*",
+           "removed, which is convention-dependent. Read it for its sign and "
+           "rough size, not against the",
+           "isometry and linear columns.",
+           "",
+           "| model | dim | read-back | raw MSG | raw cross | offset (ratio) | "
+           "isometry | linear | valid |",
            "|---|---|---|---|---|---|---|---|---|"]
     for r in rows:
         if r.get("error"):
@@ -183,7 +206,8 @@ def collect(model: str, out_dir: Path) -> dict:
         return {"model": model, "error": "no Tier B geometry"}
 
     raw_cross = msg.cross_from_record(res["msg_raw"])
-    row = {"model": model, "raw": res["msg_raw"]["overall"]["msg"],
+    raw_msg = res["msg_raw"]["overall"]["msg"]
+    row = {"model": model, "raw": raw_msg,
            "raw_cross": raw_cross, "valid": "yes"}
     for key, name in (("msg_offset_free", "offset"),
                       ("msg_procrustes", "isometry"), ("msg_linear", "linear")):
@@ -192,6 +216,14 @@ def collect(model: str, out_dir: Path) -> dict:
         # A null that could not be fitted reports nothing rather than a number.
         if fit.get("underdetermined") or fit.get("collapsed") or not fit.get("n_groups", 1):
             row[name] = None
+        elif name == "offset":
+            # The offset null centres *both* views, which inflates every
+            # distance -- on Tier B the cross distance grows 2.5x and the image
+            # control 5.6x. Comparing its centred cross distance against the
+            # uncentred one measures that rescaling, not the null, and comes out
+            # at -150% when the ratio says +6%. Only the ratio is meaningful
+            # here, and it is convention-dependent, so it is labelled as such.
+            row[name] = _share(raw_msg, (block.get("overall") or {}).get("msg"))
         else:
             row[name] = _reduction(raw_cross, msg.cross_from_record(block))
         if fit.get("dim"):

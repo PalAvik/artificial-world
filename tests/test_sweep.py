@@ -64,8 +64,10 @@ def test_reductions_are_computed_on_the_cross_distance(tmp_path):
     assert abs(row["raw_cross"] - 0.1580) < 0.001
     assert abs(row["isometry"] - 0.64) < 0.02       # measured 63-64%
     assert abs(row["linear"] - 0.76) < 0.02         # measured 75-76%
-    # Removing the per-modality mean raises the distance, so this is negative.
-    assert row["offset"] < 0
+    # The offset null is measured as a share of the ratio, not as a cross
+    # reduction: it centres both views, so its cross distance is on a different
+    # scale and comparing it with the uncentred one reports the rescaling.
+    assert abs(row["offset"] - 0.062) < 0.01
 
 def test_the_summary_states_why_it_is_not_a_share_of_msg(tmp_path):
     text = sweep.summarise([sweep.collect("m/x", _results(tmp_path))])
