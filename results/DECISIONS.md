@@ -177,7 +177,7 @@ functional delta is not yet measured.
 **Gate 1 still cannot be called.** Tier B has a strong MSG and no valid delta;
 Tier C is invalid; Tier A has not run.
 
-**2026-08-27, third run — the instrument works. The result is not the one the
+**2026-08-31, third run — the instrument works. The result is not the one the
 gate was written for.**
 
 | tier | MSG | 95% CI | forced choice: text / image | span-free floor | read-back |
@@ -228,7 +228,16 @@ revised rule Tier B still fails Gate 1's delta criterion, for a better-stated
 reason. If a third criterion needs relaxing, the correct response is to doubt
 the experimenter, not the criterion.
 
-### DECISION — 2026-08-27 · **GATE 1 NOT PASSED · NOT A DROP · one-week extension to 2026-09-02**
+### READ — 2026-08-31 · **GATE 1 WOULD NOT PASS ON TODAY'S NUMBERS · NOT A DROP**
+
+**Correction to the first version of this entry, which was wrong twice.** It was
+dated 2026-08-27 when it was written on 2026-08-31, and it spent the one-week
+extension. Neither was right, and the second mattered: **Gate 1 is not due until
+2026-09-16.** Phase 1 ran early, so there was nothing to extend — the gate has
+sixteen days left on its original schedule, and `docs/GATES.md` allows exactly
+one extension after that, which is now still unspent and stays in reserve. This
+entry is therefore an early read, not the decision. The decision is made on
+2026-09-16 with the numbers that exist then.
 
 Against the table in `docs/GATES.md`:
 
@@ -251,8 +260,8 @@ perfectly. A large representational gap with no measurable functional cost is a
 different claim from the one this project set out to make, and a more interesting
 one, but only if it survives the obvious deflation.
 
-**The extension is one week, ends 2026-09-02, and is not renewable** (`docs/GATES.md`
-allows exactly one). It must resolve three things, in this order of decisiveness:
+**Sixteen days remain to 2026-09-16.** Three things to resolve, in this order of
+decisiveness:
 
 1. **Is the gap a removable offset?** `results/phase1/results.json` already
    contains `msg_offset_free` from this run — it was computed and not looked at.
@@ -269,7 +278,7 @@ allows exactly one). It must resolve three things, in this order of decisiveness
    image view does not trivially win — the point is to put a number on the
    functional gap rather than bound it.
 
-**Pre-registered drop rule for 2026-09-02**, written before those numbers exist:
+**Pre-registered drop rule for 2026-09-16**, written before those numbers exist:
 if the offset-free MSG upper bound falls below 1.25 **and** no second tier is
 valid, the result is "a removable modality offset with no demonstrated functional
 cost and no demonstrated breadth" — **do not proceed to Phase 2; write the negative
@@ -277,8 +286,8 @@ note.** If offset-free MSG holds well above 1.25 on Tier B, the gap is structura
 and Phase 2 has a target even at one valid tier, and Gate 1 passes on a stated
 amendment recorded here rather than on the original wording.
 
-**2026-08-27, extension day 1 — the gap is not a translation. My prediction was
-wrong, and the per-layer table raises a sharper question.**
+**2026-08-31 — the gap is not a translation. My prediction was wrong, and the
+per-layer table raises a sharper question.**
 
 | tier | raw MSG | offset-free MSG | offset explains | final-layer CKA |
 |---|---|---|---|---|
@@ -331,12 +340,12 @@ This does not affect the offset or map results, which are ratios computed the
 same way throughout — but it does affect how the headline number should be
 stated, and it should have been stated this way from the first run.
 
-**Neither finding changes the Gate 1 call** recorded above: still not passed,
-still not a drop, extension still ends 2026-09-02. Both are now inputs to the
+**Neither finding changes the early read** recorded above: on today's numbers
+Gate 1 would not pass, and is nowhere near a drop. Both are inputs to the
 pre-registered drop rule, and the rule needs one amendment, made before the
-numbers exist: the rule was written around the offset-free number alone, which
-has now come back STRUCTURAL. It should have covered the whole hierarchy. The
-amended rule for 2026-09-02:
+numbers exist: it was written around the offset-free number alone, which has now
+come back STRUCTURAL. It should have covered the whole hierarchy. The amended
+rule for 2026-09-16:
 
 > If the **linear-map-free** MSG's CI upper bound falls below 1.25 on Tier B —
 > the gap is a change of basis, closable by the projector every VLM already has
