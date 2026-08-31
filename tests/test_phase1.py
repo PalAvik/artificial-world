@@ -583,3 +583,28 @@ class TestNullHierarchy:
         raw = driver.distances(cap, final, "raw")["cross"].mean()
         mapped = driver.distances(cap, final, "procrustes")["cross"].mean()
         assert raw > 0.2 and mapped < raw / 2
+
+
+class TestBanner:
+    """The run banner touches vocab and config summaries before any GPU work.
+
+    It broke on a return-type change to `vocab.length_summary()` that every
+    other test missed, because nothing exercised the printed path — and it broke
+    after the model had loaded on the cluster, which is the expensive place to
+    find a formatting bug.
+    """
+
+    def test_the_length_summary_renders(self):
+        from freeflow.data import vocab
+        lines = []
+        for name, st in sorted(vocab.length_summary().items()):
+            lines.append(f"{name:20} n={st['n']:6}  {st['mean']:5.2f} "
+                         f"+/- {st['sd']:.2f}")
+        assert len(lines) == len(vocab.CLASSES) + len(vocab.MATCHED) + 1
+        assert all(ch in "".join(lines) for ch in ("function", "concrete"))
+
+    def test_every_summary_entry_has_the_keys_the_banner_reads(self):
+        from freeflow.data import vocab
+        for name, st in vocab.length_summary().items():
+            assert {"n", "mean", "sd"} <= set(st), name
+            assert isinstance(st["n"], int) and isinstance(st["mean"], float)

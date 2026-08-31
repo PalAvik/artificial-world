@@ -454,6 +454,12 @@ def main() -> int:
                          "and is the stronger comparison. Tier B only, and it "
                          "restricts the corpus to words that have one.")
     ap.add_argument("--quick", action="store_true", help="n=128, smoke run only")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="build the corpus and print the banner, then stop "
+                         "before loading the model. Validates a run "
+                         "configuration in seconds on any machine, GPU or not: "
+                         "corpus size, distinct spans against what the map "
+                         "nulls need, and every summary the banner formats")
     args = ap.parse_args()
 
     if args.quick:
@@ -463,8 +469,31 @@ def main() -> int:
     print(f"render config: height {cfg.height}, min_pixels {cfg.min_pixels}, "
           f"{cfg.visual_tokens_per_span} visual tokens/span")
     print(f"fonts: {len(fonts.train)} train, {len(fonts.held_out)} held out")
-    print(f"word lengths by class: "
-          f"{ {k: round(v, 1) for k, v in vocab.length_summary().items()} }")
+    print(f"span pool: {len(vocab.SPANS)} distinct words")
+    print("word length by class (mean +/- sd):")
+    for name, st in sorted(vocab.length_summary().items()):
+        print(f"    {name:20} n={st['n']:6}  {st['mean']:5.2f} +/- {st['sd']:.2f}")
+
+    if args.dry_run:
+        print("\n--dry-run: building the corpus, then stopping before the model")
+        for tier in args.tiers:
+            items = build_corpus(tier, args.n, fonts, cfg, args.seed,
+                                 args.held_out_fonts,
+                                 views.ControlKind(args.control),
+                                 balanced=not args.max_distinct_spans)
+            n_spans = len({i.span_id for i in items})
+            lens = [len(i.span_text) for i in items]
+            print(f"\n=== Tier {tier} ===")
+            print(f"    {len(items)} items, {n_spans} distinct spans")
+            print(f"    span length: mean {sum(lens)/len(lens):.2f}, "
+                  f"max {max(lens)}")
+            if n_spans < 2 * 2048:
+                print(f"    ! {n_spans} distinct spans is below 2x the hidden "
+                      "size: the map-based nulls could not conclude either way")
+            else:
+                print(f"    ok: {n_spans / 2048:.1f} distinct spans per "
+                      "dimension for the map nulls")
+        return 0
 
     print(f"\nloading {args.model} ...")
     model, processor = load_model(args.model, args.attn, args.device)
