@@ -257,6 +257,11 @@ def measure_tier(model, processor, items, batch: int, layers, device: str,
             "readback_rate": report.readback_rate,
             # The two halves of the denominator, separately: if one dominates,
             # the normalisation is really being set by that control alone.
+            # The numerator, recorded in its own right. It does not depend on
+            # the choice of within-modality control, so the reduction it shows
+            # under each null is the one quantity here free of the convention
+            # that moves MSG by ~10x.
+            "cross_mean": float(d["cross"].mean()),
             "within_text_mean": float(d["within_text"].mean()),
             "within_image_mean": float(d["within_image"].mean()),
             "denominator_warning": _denominator_warning(d),

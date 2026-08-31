@@ -675,6 +675,62 @@ The image side needs the same treatment — a re-render that varies more than th
 typeface — and until it does, the bracket above should be reported in full
 rather than collapsed to a single number.
 
+**2026-08-31, synonym control — my prediction was wrong twice, and the run
+produced the fix for the convention problem.**
+
+| | surface control | synonym control |
+|---|---|---|
+| read-back | 0.977 | 0.981 |
+| span-free floor | 0.523 | 0.492 |
+| within-text control | 0.0817 | **0.0643** |
+| within-image control | 0.0090 | 0.0092 |
+| control asymmetry | 9.1x | **7.0x** |
+| raw MSG | 3.485 | **4.208** |
+
+**Wrong 1: I predicted a synonym would be a *stronger* control than a
+capitalisation flip.** It is weaker — 0.0643 against 0.0817. In hindsight the
+mechanism is plain: a synonym is an ordinary word in an ordinary slot, while
+`WISDOM` is a rare all-caps token sequence the model seldom sees. The
+capitalisation flip was not "too strong a paraphrase"; it was measuring
+tokenisation shock.
+
+**Wrong 2: I predicted this would collapse the 10x bracket.** It did not. 7.0x
+against 9.1x, and raw MSG went *up* (4.208) because the denominator shrank.
+Under the synonym control MSG still reads 2.39 against the text control and
+16.7 against the image control.
+
+**But the run answers the question a different way.** The text control appears
+only in the denominator. The *numerator* — the cross-modal distance itself — is
+the same measurement under every convention. So state the finding there:
+
+| run | cross, raw | after isometry | after linear map | isometry cuts | linear cuts |
+|---|---|---|---|---|---|
+| surface control | 0.1580 | 0.0575 | 0.0380 | **64%** | **76%** |
+| synonym control | 0.1546 | 0.0571 | 0.0388 | **63%** | **75%** |
+
+Two different 8000-word corpora, two different text controls, and the reduction
+agrees to within a point. **A fitted out-of-fold isometry removes ~63% of the
+cross-modal distance and a general linear map ~75%, and neither number needs a
+denominator convention stated beside it.** That is the control-free form of the
+finding and it is what the write-up should lead with.
+
+What still needs a convention, and therefore a bracket, is the question *"is
+what remains large?"* — because "large" requires a yardstick and the two
+yardsticks disagree 7-9x. Under the synonym control the linear map leaves MSG
+1.087 (average), 0.60 (text), 5.44 (image), 1.81 (geometric): the same two-of-
+four split as before.
+
+**Nothing here changes the Phase 2 cancellation.** A fixed matrix removes ~75%
+of the cross-modal distance, so a training program's target is the remaining
+quarter at most, whichever yardstick measures it.
+
+**The asymmetry itself is now a finding rather than a nuisance.** Across both
+controls the image side moves ~0.009 while the text side moves 0.064-0.082. The
+model's merge-position state is 7-9x more sensitive to re-expressing content in
+*text* than to re-rendering it in *pixels* — near-total typographic invariance
+against substantial lexical sensitivity. That asymmetry is stable across two
+control designs, and it is more interesting than the ratio it was obstructing.
+
 ## Gate 2 — Is it trainable, and is the effect real? · due end of Week 7
 _Not yet reached._
 

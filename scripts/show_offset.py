@@ -52,6 +52,19 @@ NULLS = [("msg_offset_free", "offset-free MSG"),
          ("msg_linear", "linear-map-free MSG")]
 
 
+def _cross(null: dict) -> float | None:
+    """Reconstruct the mean cross-modal distance from MSG and its denominator.
+
+    Older result files predate `cross_mean` being recorded directly; the ratio
+    and both halves of the denominator are enough to recover it exactly.
+    """
+    wt, wi = null.get("within_text_mean"), null.get("within_image_mean")
+    overall = null.get("overall") or {}
+    if not (wt and wi and overall.get("msg")):
+        return None
+    return overall["msg"] * 0.5 * (wt + wi)
+
+
 def _fmt(block: dict) -> str:
     ci = block.get("ci")
     ci_s = f"[{ci[0]:.3f}, {ci[1]:.3f}]" if ci else "no CI"
@@ -112,6 +125,8 @@ def main() -> int:
 
         print(f"    {'raw MSG':<24} {_fmt(raw)}")
 
+        raw_cross = (res["msg_raw"].get("cross_mean")
+                     or _cross(res["msg_raw"]))
         survives = None
         blocked: list[str] = []
         for key, label in NULLS:
@@ -124,6 +139,7 @@ def main() -> int:
             if not block:
                 print(f"    {label:<24} not computed — re-run phase1_measure.py")
                 continue
+            cross = null.get("cross_mean") or _cross(null)
             print(f"    {label:<24} {_fmt(block)}", end="")
             if raw["msg"] > 1.0:
                 share = 1.0 - (block["msg"] - 1.0) / (raw["msg"] - 1.0)
@@ -132,6 +148,21 @@ def main() -> int:
                 print()
 
             fit = null.get("fit") or {}
+            if cross and raw_cross:
+                # Convention-free. MSG's denominator moves the headline ~10x
+                # depending on which within-modality control is chosen, but the
+                # numerator is the same measurement under every choice, so the
+                # reduction it shows is the one number that does not need the
+                # convention stated alongside it.
+                # Direction stated in words: removing the per-modality mean
+                # *increases* the cosine distance (the shared component was
+                # making everything look alike), so a signed percentage here
+                # reads backwards half the time.
+                delta = cross / raw_cross - 1.0
+                way = "below" if delta < 0 else "above"
+                print(f"    {'':<24}   cross distance {cross:.4f} "
+                      f"({abs(delta):.0%} {way} raw) — independent of the "
+                      "control")
             if fit:
                 # Positive evidence, printed every time. Absence of a warning is
                 # not evidence that a check ran.

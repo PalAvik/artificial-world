@@ -165,3 +165,40 @@ def test_msg_is_reported_against_each_control_separately(tmp_path):
     # cross = 3.331 * 0.5 * (0.0817 + 0.0090) = 0.15106
     assert "vs text control 1.85" in out, out
     assert "vs image control 16.78" in out, out
+
+
+def test_the_cross_distance_reduction_is_reported(tmp_path):
+    """The convention-free number. MSG moves ~10x with the choice of control
+    because only its denominator depends on that choice; the numerator is the
+    same measurement under every convention, so its reduction is quotable
+    without one."""
+    doc = _doc(msg_linear=_null(0.858, 0.851, 0.865, wt=0.0817, wi=0.0069,
+                                fit=_fit(control_retention=0.77)))
+    doc["results"]["B"]["msg_raw"]["within_text_mean"] = 0.0817
+    doc["results"]["B"]["msg_raw"]["within_image_mean"] = 0.0090
+    out = _run(doc, tmp_path)
+    # raw cross 0.1580, linear cross 0.0380 -> -76%
+    assert "cross distance 0.0380" in out
+    assert "76% below raw" in out
+    assert "independent of the control" in out
+
+
+def test_an_increase_is_reported_as_an_increase(tmp_path):
+    """Removing the per-modality mean *raises* the cosine distance -- the shared
+    component was making everything look alike -- so a signed percentage reads
+    backwards half the time."""
+    doc = _doc(msg_offset_free=_null(3.011, 2.984, 3.039, wt=0.2146, wi=0.0497))
+    doc["results"]["B"]["msg_raw"]["within_text_mean"] = 0.0643
+    doc["results"]["B"]["msg_raw"]["within_image_mean"] = 0.0092
+    out = _run(doc, tmp_path)
+    assert "above raw" in out and "below raw" not in out
+
+
+def test_the_reduction_works_on_files_without_cross_mean(tmp_path):
+    """Files written before cross_mean was recorded must still report it."""
+    doc = _doc(msg_procrustes=_null(1.262, 1.252, 1.272, wt=0.0817, wi=0.0094,
+                                    fit=_fit(kind="orthogonal")))
+    doc["results"]["B"]["msg_raw"]["within_text_mean"] = 0.0817
+    doc["results"]["B"]["msg_raw"]["within_image_mean"] = 0.0090
+    out = _run(doc, tmp_path)
+    assert "64% below raw" in out
