@@ -533,6 +533,92 @@ its check was sound: the drop called on a contaminated number, then a collapse
 called by a miscalibrated check, then the retraction of that collapse. The
 common cause is that I state a conclusion in the same turn the number arrives.
 
+### DECISION — 2026-08-31 · **GATE 1 CALLED EARLY · PHASE 2 CANCELLED · PROJECT RESCOPED**
+
+Called 16 days before its due date because the deciding number exists, is
+validated, and will not change with more time on the current design.
+
+**The validated Tier B measurement** (Qwen3.5-2B, 8000 distinct spans, n=16000):
+
+| | value | |
+|---|---|---|
+| read-back | 0.977 (CER 0.0039) | corpus legible |
+| forced choice | text 0.996 / image 1.000, floor 0.523 | task real, both views recover the span |
+| raw MSG | 3.485 [3.460, 3.510] | |
+| offset-free | 3.331 | offset explains **6%** |
+| rotation-free | 1.262 [1.252, 1.272] | rotation explains **89%** |
+| linear-map-free | 0.858 [0.851, 0.865] | linear map explains **all of it** |
+
+Fits held out by 8000 distinct spans at 6.2 rows/dim, control retention 100%.
+
+**The finding: the gap is orientation, not information.** At the merge position
+of a 2B decoder VLM, the orthographic modality gap is a change of basis — the
+transform a standard vision-to-language projector already implements.
+
+**Consequence, per the rule pre-registered before the number existed: Phase 2 is
+cancelled.** Training a model to align representations that a fixed matrix
+already aligns has no target. This is not a failure of execution; it is the
+measurement doing its job for about 5% of the project's compute budget.
+
+**A caveat that must travel with the number.** MSG averages two within-modality
+controls that differ by ~9x on Tier B, and the headline moves 10x with a
+defensible change of convention:
+
+| denominator | raw MSG | rotation removes |
+|---|---|---|
+| average of both (reported) | 3.48 | 89% |
+| text control only | 1.93 | 132% |
+| image control only | 17.54 | 69% |
+| geometric mean | 5.82 | 78% |
+
+The *direction* is robust — a rotation removes most of the gap under every
+convention. The *magnitude* is not a fact about the model. Any write-up states
+this up front rather than letting a reviewer find it.
+
+**What is NOT established, and is why this is a pilot and not yet a paper:**
+one model, one of three tiers valid (C invalid, A never run, P built and unrun),
+and no demonstrated downstream consequence.
+
+### The rescoped project, and its gate
+
+The question is no longer "can we train the modalities together". It is:
+
+> **Is the modality gap orientation in every decoder VLM, and does the residual
+> after the best rotation predict typographic-jailbreak susceptibility?**
+
+Two experiments, both inference-only, ~2 weeks:
+
+1. **Multi-model sweep** (`scripts/model_sweep.py`). The comparable quantity is
+   the *share of the gap each null removes*, which is a within-model ratio;
+   raw MSG is not comparable across models and the summary says so. Note the
+   pool holds 8000 distinct spans, so models with hidden size above ~4000 will
+   report their map nulls as untestable rather than printing a number.
+2. **Jailbreak correlation.** Does the rotation residual track FigStep-style
+   attack success across those same models? A positive result is a mechanistic
+   account of a known vulnerability: safety learned as a direction in the text
+   frame, missed by a rotated copy of the same content.
+
+**GATE 1b — 2026-09-14, and it is the last one.** Written before the numbers
+exist:
+
+> **CONTINUE** if the sweep shows the null structure varying with scale or
+> family, **or** the rotation residual correlates with attack success. Either is
+> a second finding and the basis for a main-venue submission.
+>
+> **STOP AND WRITE** if the sweep returns the same answer everywhere and no
+> correlation appears. That is a workshop-scale contribution — a normalised,
+> guarded instrument plus a null result — and it should be written in a week and
+> ended, not extended.
+>
+> No third extension. The Gate 0 extension precedent applies: this project has
+> already relaxed two criteria after they blocked, and a third would mean
+> doubting the experimenter rather than the criterion.
+
+**Honest odds, recorded so they can be checked later:** roughly one in three for
+a main-venue paper, better than even for a workshop one. Recorded because the
+person making this estimate has been wrong five times in this project on matters
+that were checkable, and an unrecorded estimate cannot be scored.
+
 ## Gate 2 — Is it trainable, and is the effect real? · due end of Week 7
 _Not yet reached._
 

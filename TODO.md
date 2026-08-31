@@ -12,7 +12,21 @@ still unspent and stays in reserve.
 
 ---
 
-## Blocking Gate 1 (2026-09-16)
+## Gate 1b — 2026-09-14 · the last gate
+
+Gate 1 was called early on 2026-08-31: the gap is a change of basis, Phase 2 is
+cancelled, the project is rescoped to *is this true of every decoder VLM, and
+does it explain typographic jailbreaks?* See `results/DECISIONS.md`.
+
+- [ ] **Multi-model sweep.** `python scripts/model_sweep.py --preflight` first —
+      the ids in `configs/sweep_models.txt` were written without hub access and
+      need verifying — then `--n 16000`. Resumable; one subprocess per model.
+- [ ] **Jailbreak correlation.** Does the rotation residual track FigStep-style
+      attack success across the swept models?
+- [ ] **Decide on 2026-09-14** and record it. CONTINUE on either result showing
+      structure; STOP AND WRITE otherwise. No third extension.
+
+## Superseded — Gate 1 (called 2026-08-31)
 
 On today's numbers Gate 1 would not pass: one instrument-valid tier of the two
 required, and no positive functional delta. It is nowhere near a DROP — that
