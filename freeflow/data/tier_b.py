@@ -18,6 +18,7 @@ from typing import Sequence
 
 from .render import FontSet, RenderConfig, render_pair
 from .views import CONTEXTS, ControlKind, SpanItem, surface_variant, validate
+from . import vocab
 
 # Only for spans where a genuine near-synonym exists. Not the default: see
 # data/views.py for why surface variants are the primary control.
@@ -41,8 +42,8 @@ def _control(span: str, kind: ControlKind) -> tuple[str, str]:
     together, and the surface half is much the smaller of the two.
     """
     if kind is ControlKind.SYNONYM:
-        alt = SYNONYMS.get(span.lower())
-        if alt:
+        alt = vocab.SYNONYMS.get(span.lower()) or SYNONYMS.get(span.lower())
+        if alt and alt != span:
             return alt, ControlKind.SYNONYM.value
     return surface_variant(span), ControlKind.SURFACE.value
 
@@ -66,11 +67,10 @@ def build(
     Each item draws its two fonts without replacement, so the image half of the
     MSG denominator is a genuine font-to-font distance rather than zero.
     """
-    from . import vocab
-
     rng = random.Random(seed)
     picks = (list(words) if words is not None
-             else vocab.sample(n, rng, balanced=balanced))
+             else vocab.sample(n, rng, balanced=balanced,
+                               pool=vocab.pool_for(control.value)))
     items: list[SpanItem] = []
 
     for i, (word, cls) in enumerate(picks):

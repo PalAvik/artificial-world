@@ -474,3 +474,69 @@ class TestTierP:
         items = tier_p.build(4, tree, cfg, seed=0)
         assert all(it.meta["target_pixels"] == 50176 for it in items)
         assert items[0].span_image.width < tier_p.build(4, tree, seed=0)[0].span_image.width
+
+
+class TestSynonymControl:
+    """The text-side control that decides the headline.
+
+    MSG's two controls disagreed by ~9x on Tier B -- a capitalisation flip
+    re-tokenises the span, a font change does not -- and that disagreement moves
+    the reported gap by 10x. A synonym is the control the metric was defined
+    for: a different lexical item carrying the same content.
+    """
+
+    def test_the_pool_is_fully_covered(self):
+        """Only ~55% of words have a usable synonym, so the pool is selected
+        from covered words rather than filtered afterwards -- filtering 8000
+        down would leave ~3900 distinct spans, under the ~4096 a [2048, 2048]
+        map needs, and the map nulls would abstain on exactly the runs meant to
+        settle the denominator."""
+        if not vocab.SYNONYMS:
+            pytest.skip("synonyms.tsv not built")
+        assert len(vocab.SPANS_SYNONYM) >= 2 * 2048
+        assert all(w in vocab.SYNONYMS for w in vocab.SPANS_SYNONYM)
+
+    def test_no_synonym_is_the_word_itself(self):
+        """A control identical to the span sends the denominator to zero."""
+        if not vocab.SYNONYMS:
+            pytest.skip("synonyms.tsv not built")
+        assert all(w != s for w, s in vocab.SYNONYMS.items())
+
+    def test_no_synonym_is_a_morphological_variant(self):
+        """`quick`/`quickly` is one lexical item in two shapes, not a second way
+        of saying the same thing."""
+        if not vocab.SYNONYMS:
+            pytest.skip("synonyms.tsv not built")
+        bad = [(w, s) for w, s in vocab.SYNONYMS.items()
+               if w.startswith(s) or s.startswith(w)]
+        assert not bad, bad[:5]
+
+    def test_synonyms_do_not_skew_length(self, fonts, cfg):
+        """Gate 0 showed read-back tracks length, so a systematically longer
+        control would reintroduce the confound the corpus removes."""
+        if not vocab.SYNONYMS:
+            pytest.skip("synonyms.tsv not built")
+        import statistics
+        d = [len(s) - len(w) for w, s in vocab.SYNONYMS.items()]
+        assert abs(statistics.mean(d)) < 1.0
+
+    def test_the_synonym_control_is_applied_to_every_item(self, fonts, cfg):
+        if not vocab.SYNONYMS:
+            pytest.skip("synonyms.tsv not built")
+        items = tier_b.build(200, fonts, cfg, seed=0, balanced=False,
+                             control=views.ControlKind.SYNONYM)
+        assert all(i.meta["control_applied"] == "synonym" for i in items)
+        assert all(i.span_paraphrase != i.span_text for i in items)
+
+    def test_surface_control_still_works_without_the_file(self, fonts, cfg):
+        """Only synonym runs need the table; a checkout without it must still
+        reproduce the surface-control numbers."""
+        items = tier_b.build(50, fonts, cfg, seed=0, balanced=False,
+                             control=views.ControlKind.SURFACE)
+        assert all(i.meta["control_applied"] == "surface" for i in items)
+
+    def test_pool_for_refuses_synonym_runs_when_unbuilt(self, monkeypatch):
+        monkeypatch.setattr(vocab, "SPANS_SYNONYM", [])
+        with pytest.raises(FileNotFoundError, match="build_synonyms"):
+            vocab.pool_for("synonym")
+        assert vocab.pool_for("surface") is vocab.SPANS

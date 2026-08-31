@@ -619,6 +619,62 @@ a main-venue paper, better than even for a workshop one. Recorded because the
 person making this estimate has been wrong five times in this project on matters
 that were checkable, and an unrecorded estimate cannot be scored.
 
+### AMENDMENT — 2026-08-31 · the linear-map conclusion is convention-dependent
+
+The decision above records "a linear map explains all of it" and cancels Phase 2
+on that basis. I checked the convention-sensitivity of the *raw* number and the
+*rotation* share and recorded that caveat. **I did not check whether the linear
+conclusion survives the same test.** It does not, fully.
+
+MSG after each null, under four defensible choices of denominator:
+
+| convention | raw | offset | rotation | linear | offset removes | rotation removes | linear removes |
+|---|---|---|---|---|---|---|---|
+| average of both (reported) | 3.48 | 3.33 | 1.26 | **0.86** | 6% | 89% | 106% |
+| text control only | 1.93 | 2.11 | 0.70 | **0.47** | **−19%** | 132% | 157% |
+| image control only | 17.54 | 7.87 | 6.12 | **5.51** | 58% | 69% | 73% |
+| geometric mean | 5.82 | 4.08 | 2.07 | **1.60** | 36% | 78% | 88% |
+
+**What is robust.** A fitted linear map removes 73–157% of the gap under every
+convention — always the large majority. A per-modality translation is never the
+main component (58% at most, and *negative* under the text control). So the
+centroid-offset account of the modality gap fails here in every reading.
+
+**What is not.** Whether the linear map removes the gap *entirely*. MSG after
+the map is 0.86 / 0.47 / 5.51 / 1.60, and only two of four fall below the 1.25
+line. There is a real argument for the convention that disagrees: a font change
+genuinely preserves content, while a capitalisation flip re-tokenises the word,
+so the image control is arguably the better yardstick — and under it MSG stays
+at 5.51.
+
+**Two further precision errors in the entry above**, both mine:
+
+1. "The gap is orientation" overstates. The best isometry leaves MSG 1.262, CI
+   [1.252, 1.272], *entirely above* the 1.25 threshold this project
+   pre-registered. A gap survives the best rotation.
+2. The Procrustes map is `(x − mean_s) @ A + mean_t` — a rotation **plus a
+   translation**, an isometry. The code comment calling it "the nearest
+   rotation, nothing more" is wrong and has been corrected.
+
+**Does Phase 2 stay cancelled? Yes, but on narrower grounds.** Under every
+convention a *fixed, out-of-fold linear map* removes the large majority of the
+gap. Whatever a training program could target is therefore much smaller than the
+headline 3.485 suggested, and is bounded above by the residual a matrix already
+leaves. That is a judgement, not a measurement, and it is recorded as one.
+
+**Consequence: the synonym control is promoted from optional to decisive.** Both
+current controls are bad in opposite directions — the capitalisation flip too
+strong, the font change too weak — and until they are comparable no MSG
+magnitude is defensible. `scripts/build_synonyms.py` now derives a WordNet
+synonym for 20,026 words, and `vocab.SPANS_SYNONYM` is an 8000-word pool in
+which every span has one, selected up front so the map nulls still clear their
+sample-size threshold (3.9 spans per dimension). The re-run under
+`--control synonym` is now the highest-priority measurement in the project.
+
+The image side needs the same treatment — a re-render that varies more than the
+typeface — and until it does, the bracket above should be reported in full
+rather than collapsed to a single number.
+
 ## Gate 2 — Is it trainable, and is the effect real? · due end of Week 7
 _Not yet reached._
 

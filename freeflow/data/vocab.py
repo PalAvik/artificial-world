@@ -140,7 +140,8 @@ def _strictly_matched() -> dict[str, list[str]]:
 MATCHED: dict[str, list[str]] = _strictly_matched()
 
 
-def _build_spans(limit: int = DEFAULT_POOL, seed: int = 0) -> list[str]:
+def _build_spans(limit: int = DEFAULT_POOL, seed: int = 0,
+                 allowed: set[str] | None = None) -> list[str]:
     """The volume pool: the four classes round-robin, topped up from `bulk`.
 
     Round-robin rather than a truncation, because the labelled classes total
@@ -153,7 +154,8 @@ def _build_spans(limit: int = DEFAULT_POOL, seed: int = 0) -> list[str]:
     rng = random.Random(seed)
     pools = []
     for name in sorted(CLASSES):
-        words = list(CLASSES[name])
+        words = [w for w in CLASSES[name]
+                 if allowed is None or w in allowed]
         rng.shuffle(words)
         pools.append(words)
     chosen: list[str] = []
@@ -166,7 +168,8 @@ def _build_spans(limit: int = DEFAULT_POOL, seed: int = 0) -> list[str]:
         if len(chosen) >= limit:
             break
     if len(chosen) < limit:
-        bulk = sorted((r for r in ROWS if r["cls"] == "bulk"),
+        bulk = sorted((r for r in ROWS if r["cls"] == "bulk"
+                       and (allowed is None or r["word"] in allowed)),
                       key=lambda r: (-r["freq"], r["word"]))
         for r in bulk:
             if len(chosen) >= limit:
@@ -178,6 +181,53 @@ def _build_spans(limit: int = DEFAULT_POOL, seed: int = 0) -> list[str]:
 
 
 SPANS: list[str] = _build_spans()
+
+SYNONYMS_FILE = Path(__file__).with_name("synonyms.tsv")
+
+
+def _load_synonyms(path: Path = SYNONYMS_FILE) -> dict[str, str]:
+    """WordNet-derived synonym per word, from `scripts/build_synonyms.py`.
+
+    Absent rather than fatal: only synonym-controlled runs need it, and a
+    checkout without it should still reproduce the surface-control numbers.
+    """
+    if not path.exists():
+        return {}
+    out = {}
+    for line in path.read_text().splitlines():
+        if line.startswith("#") or line.startswith("word\t"):
+            continue
+        word, syn, _rank = line.split("\t")
+        out[word] = syn
+    return out
+
+
+SYNONYMS: dict[str, str] = _load_synonyms()
+
+# The pool for synonym-controlled runs. Only ~55% of words have a usable
+# synonym, so restricting the 8000-word pool after the fact would leave ~3900
+# distinct spans -- under the ~4096 a [2048, 2048] map needs, which would make
+# the map nulls abstain on exactly the runs meant to settle the denominator.
+# Selecting from covered words up front keeps the pool at full size.
+SPANS_SYNONYM: list[str] = (_build_spans(allowed=set(SYNONYMS))
+                            if SYNONYMS else [])
+
+
+def pool_for(control: str) -> list[str]:
+    """The span pool a given text control can actually be measured on.
+
+    Takes the control's name rather than the enum: `views` owns `ControlKind`
+    and importing it here would couple the vocabulary to the view machinery for
+    one comparison.
+    """
+    if control == "synonym":
+        if not SPANS_SYNONYM:
+            raise FileNotFoundError(
+                f"{SYNONYMS_FILE} is missing; run "
+                "`python scripts/build_synonyms.py` to build the synonym "
+                "control, or use --control surface")
+        return SPANS_SYNONYM
+    return SPANS
 
 CLASS_OF: dict[str, str] = {w: c for c, ws in CLASSES.items() for w in ws}
 
@@ -215,7 +265,8 @@ def length_histogram(name: str) -> dict[int, int]:
 
 
 def sample(n: int, rng: random.Random, classes: list[str] | None = None,
-           balanced: bool = True) -> list[tuple[str, str]]:
+           balanced: bool = True,
+           pool: list[str] | None = None) -> list[tuple[str, str]]:
     """Sample `(word, class)` pairs.
 
     `balanced=True` rotates through the four classes, which is what H2 wants and
@@ -228,18 +279,19 @@ def sample(n: int, rng: random.Random, classes: list[str] | None = None,
     fill its quarter. Both now clear what the map nulls need at `D = 2048`; the
     unbalanced mode is simply the one that wastes nothing.
     """
+    spans = list(pool if pool is not None else SPANS)
     if not balanced:
-        pool = list(SPANS)
-        rng.shuffle(pool)
-        out = [(w, class_of(w)) for w in pool[:n]]
-        while len(out) < n:                    # only once SPANS is exhausted
-            w = rng.choice(SPANS)
-            out.append((w, class_of(w)))
+        rng.shuffle(spans)
+        out = [(w, class_of(w)) for w in spans[:n]]
+        while len(out) < n:                    # only once the pool is exhausted
+            out.append((w := rng.choice(spans), class_of(w)))
         return out
 
     names = classes or sorted(CLASSES)
+    keep = set(spans)
     out: list[tuple[str, str]] = []
-    pools = {c: list(CLASSES[c]) for c in names}
+    pools = {c: [w for w in CLASSES[c] if w in keep] or list(CLASSES[c])
+             for c in names}
     for c in pools:
         rng.shuffle(pools[c])
     cursors = dict.fromkeys(names, 0)

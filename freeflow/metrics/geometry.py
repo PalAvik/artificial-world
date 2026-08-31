@@ -173,7 +173,10 @@ def _fit_map(source: torch.Tensor, target: torch.Tensor, kind: str,
     x, y = source - mean_s, target - mean_t
     if kind == "orthogonal":
         # Orthogonal Procrustes: min ||xA - y|| over A^T A = I, so A = U V^T
-        # from the SVD of x^T y. The nearest *rotation*, nothing more.
+        # from the SVD of x^T y. Note the caller applies this as
+        # (x - mean_s) @ A + mean_t, so the fitted map is a rotation *plus a
+        # translation* -- an isometry. Calling a result of this "a rotation"
+        # overstates it, and the Gate 1 entry of 2026-08-31 did exactly that.
         u, _, vh = torch.linalg.svd(x.T @ y, full_matrices=False)
         return u @ vh, mean_s, mean_t
     if kind == "linear":

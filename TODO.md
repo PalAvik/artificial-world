@@ -18,6 +18,13 @@ Gate 1 was called early on 2026-08-31: the gap is a change of basis, Phase 2 is
 cancelled, the project is rescoped to *is this true of every decoder VLM, and
 does it explain typographic jailbreaks?* See `results/DECISIONS.md`.
 
+- [ ] **Synonym-control re-run — highest priority.** The headline moves 10x on
+      the choice of within-modality control, and both current controls are bad
+      in opposite directions. `--control synonym` now draws from an 8000-word
+      pool where every span has a WordNet synonym.
+- [ ] **A harder image control.** The font change moves the merge state 0.0090
+      against the text control's 0.0817. Until both sides are comparable
+      re-expressions, no MSG magnitude is defensible.
 - [ ] **Multi-model sweep.** `python scripts/model_sweep.py --preflight` first —
       the ids in `configs/sweep_models.txt` were written without hub access and
       need verifying — then `--n 16000`. Resumable; one subprocess per model.
