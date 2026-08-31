@@ -23,9 +23,24 @@ does not affect the output.
 | `sections/abstract.tex` | |
 | `sections/introduction.tex` | the problem, why it is ill-posed, contributions |
 | `sections/method.tex` | views, merge position, MSG, tiers, validity, protocol |
+| `figures/method.tex` | Figure 1, TikZ; the merge position and the MSG ratio |
+| `figures/span_*.png` | the example stimulus, rendered by `scripts/make_figure_assets.py` at the frozen Gate 0 geometry |
 | `references.bib` | **empty on purpose** — see below |
 | `iclr2026_conference.{sty,bst}` | official template, fetched from the ICLR master template |
 | `template_reference.tex.orig` | the template's own example file, for formatting reference |
+
+## Figure 1
+
+Regenerate the stimulus strips with:
+
+```bash
+python scripts/make_figure_assets.py --word wisdom
+```
+
+They are the *actual* Tier B stimulus at the frozen render geometry, not a
+drawing of one, so the figure cannot drift from the corpus and a reader can see
+for themselves how legible a six-visual-token span is. The figure needs
+`texlive-pictures` for TikZ; it fits `\textwidth` with no overfull box.
 
 ## What is deliberately missing
 
