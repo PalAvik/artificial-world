@@ -613,3 +613,60 @@ class TestBanner:
         for name, st in vocab.length_summary().items():
             assert {"n", "mean", "sd"} <= set(st), name
             assert isinstance(st["n"], int) and isinstance(st["mean"], float)
+
+
+class TestViewAlignment:
+    """Where the four views are compared, when their tokenisers disagree.
+
+    Qwen tokenises the suffix identically in every view, so the merge position
+    is the first suffix token and nothing here changes. SentencePiece merges a
+    leading space backwards into the preceding token, and what precedes the
+    suffix differs by construction — a written word in one view, image tokens in
+    another. On llava-v1.6 the text view produced `on` where the image view
+    produced a bare space then `on`, putting the two "first suffix tokens" at
+    different tokens entirely.
+    """
+
+    def _built(self, tails):
+        """Four views whose sequences end in the given token tails."""
+        out = {}
+        for key, tail in tails.items():
+            ids = torch.tensor([[90, 91] + list(tail)])
+            out[key] = runner.ViewBatch(
+                inputs={"input_ids": ids,
+                        "attention_mask": torch.ones_like(ids)},
+                merge_index=torch.tensor([2]), suffix_len=len(tail))
+        return out
+
+    def test_identical_tokenisation_keeps_the_full_suffix(self):
+        """The Qwen case: nothing backs off."""
+        tails = {k: (5, 6, 7) for k in
+                 ("text", "image", "text_control", "image_control")}
+        assert runner._alignment_depth(self._built(tails)) == 3
+
+    def test_a_merged_leading_space_backs_off_by_one(self):
+        """The llava case: `on the page` vs ` on the page`, realigning at
+        `the`."""
+        # 373 is `▁on`; 373 and 373372 are different tokens because a bare
+        # `on` after a standalone space is not the same id as `▁on`. That is
+        # precisely why the two views' first suffix tokens differed.
+        built = self._built({"text": (373, 278, 3488),
+                             "image": (29871, 373372, 278, 3488),
+                             "text_control": (373, 278, 3488),
+                             "image_control": (29871, 373372, 278, 3488)})
+        assert runner._alignment_depth(built) == 2
+
+    def test_views_that_never_agree_raise(self):
+        built = self._built({"text": (1, 2, 3), "image": (4, 5, 6),
+                             "text_control": (1, 2, 3),
+                             "image_control": (4, 5, 6)})
+        with pytest.raises(ValueError, match="no depth at which"):
+            runner._alignment_depth(built)
+
+    def test_the_depth_is_bounded_by_the_shortest_suffix(self):
+        """It must never reach back into the span, whose tokens differ between
+        views by design and would otherwise be compared."""
+        built = self._built({k: (5, 6, 7) for k in
+                             ("text", "image", "text_control", "image_control")})
+        built["image"].suffix_len = 1
+        assert runner._alignment_depth(built) == 1

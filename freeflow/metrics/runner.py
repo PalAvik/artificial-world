@@ -247,6 +247,11 @@ class CaptureResult:
     span_ids: list[str] = field(default_factory=list)
     groups: list[str] = field(default_factory=list)
     read_ok: list[bool] = field(default_factory=list)
+    # How deep into the shared suffix the views could be compared. Equals the
+    # suffix length when every view tokenises it identically; smaller when a
+    # tokeniser merged a leading space backwards across the span boundary, which
+    # is a property of the model and belongs in the record.
+    merge_depth: int | None = None
 
 
 def default_layers(n_hidden: int, k: int = 8) -> list[int]:
@@ -264,6 +269,53 @@ def default_layers(n_hidden: int, k: int = 8) -> list[int]:
 
 
 @torch.no_grad()
+def _alignment_depth(built: dict) -> int:
+    """How deep into the shared suffix the four views agree, in tokens.
+
+    The merge position is meant to be the first token after the span, and for
+    Qwen it is: the suffix tokenises identically in every view, so this returns
+    each view's own suffix length and nothing changes.
+
+    It is not universal. A SentencePiece tokeniser merges a leading space
+    backwards into the preceding token, and what precedes the suffix differs by
+    construction -- a written word in the text view, image tokens in the image
+    view. On llava-v1.6 the text view produced `▁on` where the image view
+    produced `▁` then `on`, so the image view's suffix was a token longer and
+    the two "first suffix tokens" were different tokens. Comparing hidden states
+    there compares different positions.
+
+    So the position is defined as the deepest point at which every view's
+    terminal tokens still agree, bounded by the shortest suffix so it can never
+    reach back into the span. Backing off costs a little of the suffix and
+    keeps the comparison meaningful; reaching zero means the views cannot be
+    aligned at all, which is worth an exception rather than a number.
+    """
+    ids = {k: vb.inputs["input_ids"] for k, vb in built.items()}
+    lengths = {k: vb.inputs["attention_mask"].sum(dim=1) for k, vb in built.items()}
+    ceiling = min(vb.suffix_len for vb in built.values())
+    rows = next(iter(ids.values())).shape[0]
+
+    best = ceiling
+    for row in range(rows):
+        d = best
+        while d > 0:
+            tails = {tuple(ids[k][row, int(lengths[k][row]) - d:
+                                  int(lengths[k][row])].tolist())
+                     for k in ids}
+            if len(tails) == 1:
+                break
+            d -= 1
+        if d == 0:
+            raise ValueError(
+                f"item {row}: no depth at which all four views share their "
+                "final tokens, so there is no position where they can be "
+                "compared. The suffix tokenises differently after a written "
+                "span than after image tokens all the way down — start the "
+                "suffix at an unambiguous boundary, such as a newline.")
+        best = min(best, d)
+    return best
+
+
 def capture(model, processor, items: Sequence[SpanItem], batch: int = 32,
             layers: Sequence[int] | None = None,
             device: str = "cuda:0") -> dict[str, CaptureResult]:
@@ -285,11 +337,34 @@ def capture(model, processor, items: Sequence[SpanItem], batch: int = 32,
     for chunk in batch_by_suffix(items, batch):
         primary_logits = {}
 
-        merge_tokens: dict[str, torch.Tensor] = {}
-        for key, (modality, variant) in views.items():
-            vb = build_view(processor, chunk, modality, variant, device)
-            merge_tokens[key] = vb.inputs["input_ids"].gather(
-                1, vb.merge_index.view(-1, 1)).squeeze(1).cpu()
+        # Build every view before forwarding any of them: the merge position has
+        # to be agreed *across* views and no single view can determine it.
+        built = {key: build_view(processor, chunk, modality, variant, device)
+                 for key, (modality, variant) in views.items()}
+        depth = _alignment_depth(built)
+        for key in results:
+            prior = results[key].merge_depth
+            results[key].merge_depth = (depth if prior is None
+                                        else min(prior, depth))
+        for vb in built.values():
+            vb.merge_index = vb.inputs["attention_mask"].sum(dim=1) - depth
+            vb.suffix_len = depth
+
+        # After alignment this must hold. Kept as an assertion rather than
+        # trusted: a silent misalignment corrupts every distance downstream and
+        # nothing further along would notice.
+        merge_tokens = {k: vb.inputs["input_ids"].gather(
+            1, vb.merge_index.view(-1, 1)).squeeze(1) for k, vb in built.items()}
+        ref = merge_tokens["text"]
+        for key, got in merge_tokens.items():
+            if not torch.equal(got, ref):
+                bad = int((got != ref).nonzero()[0])
+                raise ValueError(
+                    f"alignment failed: view {key!r} holds a different token at "
+                    f"the merge position than the text view (item {bad}: "
+                    f"{int(got[bad])} vs {int(ref[bad])})")
+
+        for key, vb in built.items():
             out = model(**vb.inputs, output_hidden_states=True)
             if chosen is None:
                 chosen = default_layers(len(out.hidden_states))
@@ -304,23 +379,7 @@ def capture(model, processor, items: Sequence[SpanItem], batch: int = 32,
                     model, out.hidden_states[-1], vb.merge_index, vb.suffix_len)
             del out
             torch.cuda.empty_cache()
-
-        # The invariant the whole comparison rests on: the merge position must
-        # hold the *same token* in every view. It is the first token of a suffix
-        # that is identical text in all four, but what precedes it differs -- a
-        # written span in one view, image tokens in another -- and a tokeniser
-        # that merges across that boundary would leave the four views pointing
-        # at different tokens while every index still looked plausible.
-        ref = merge_tokens["text"]
-        for key, got in merge_tokens.items():
-            if not torch.equal(got, ref):
-                bad = int((got != ref).nonzero()[0])
-                raise ValueError(
-                    f"view {key!r} has a different token at the merge position "
-                    f"than the text view (item {bad}: {int(got[bad])} vs "
-                    f"{int(ref[bad])}). The views are not aligned and every "
-                    "distance between them would be measured at mismatched "
-                    "positions.")
+        del built
 
         results["text"].jsd.update(primary_logits["text"], primary_logits["image"])
         del primary_logits

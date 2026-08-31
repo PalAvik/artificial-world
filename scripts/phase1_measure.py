@@ -200,6 +200,11 @@ def measure_tier(model, processor, items, batch: int, layers, device: str,
 
     cap = runner.capture(model, processor, items, batch=batch, layers=layers,
                          device=device)
+    # How deep into the shared suffix the views had to be compared. Equal to the
+    # suffix length when every view tokenises it the same way; smaller when a
+    # tokeniser merged a leading space backwards, which is a property of the
+    # model and belongs in the record rather than only in a log line.
+    depth = cap["text"].merge_depth
     captured = cap["text"].hidden["layers"]
     final = str(len(captured) - 1)
     groups = cap["text"].groups
@@ -221,6 +226,7 @@ def measure_tier(model, processor, items, batch: int, layers, device: str,
             "delta_warning": delta_note,
         },
         "layers_captured": captured,
+        "merge_depth": depth,
         "jsd": cap["text"].jsd.summary(),
         "seconds": 0.0,
     }
