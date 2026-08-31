@@ -15,7 +15,9 @@ words before the null is testable at all. The 150-word list this replaces made
 it untestable, which is how a run on 2026-08-31 produced a meaningless
 `MSG = 0.006` (see results/DECISIONS.md).
 
-**Sources**, all downloaded to `data/sources/` and read from there:
+**Sources**, downloaded to `data/sources/` and read from there. They are
+third-party corpora and are *not* committed; `docs/DATA.md` has the fetch
+commands:
 
 * `bry.txt` --- Brysbaert, Warriner & Kuperman (2014), *Concreteness ratings
   for 40 thousand generally known English word lemmas*, Behavior Research

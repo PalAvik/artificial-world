@@ -53,7 +53,8 @@ def _load(path: Path = WORDLIST) -> list[dict]:
     if not path.exists():
         raise FileNotFoundError(
             f"{path} is missing. Regenerate it with "
-            "`python scripts/build_vocab.py` (see that script for sources).")
+            "`python scripts/build_vocab.py`; docs/DATA.md has the commands "
+            "for fetching its inputs first.")
     rows = []
     for line in path.read_text().splitlines():
         if line.startswith("#") or line.startswith("word\t"):

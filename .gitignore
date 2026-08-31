@@ -16,3 +16,7 @@ wandb/
 # generated per-machine by scripts/setup_fonts.py (absolute paths)
 configs/fonts.yaml
 freeflow.egg-info/
+
+# stray LaTeX logs from a failed root-level run
+/texput.log
+*.aux
