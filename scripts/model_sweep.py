@@ -45,6 +45,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from freeflow.metrics import msg  # noqa: E402
+
 DEFAULT_LIST = ROOT / "configs" / "sweep_models.txt"
 
 
@@ -100,36 +102,71 @@ def run_one(model: str, out_dir: Path, args) -> tuple[str, float]:
             time.perf_counter() - t0)
 
 
-def _share(raw: float, null: float) -> float | None:
-    return None if raw <= 1.0 else 1.0 - (null - 1.0) / (raw - 1.0)
+def _reduction(raw_cross: float | None, cross: float | None) -> float | None:
+    """Fraction by which a null shrinks the cross-modal distance.
+
+    Replaces the earlier share-of-MSG measure, which divided by a denominator
+    whose definition moves the answer ~10x: on Tier B the same null "removes"
+    69% or 132% of the gap depending on whether the within-modality control is a
+    font change or a capitalisation flip. The cross distance is the same
+    measurement under both, so this is comparable across models *and* across
+    control designs.
+    """
+    if not raw_cross or cross is None:
+        return None
+    return 1.0 - cross / raw_cross
 
 
 def summarise(rows: list[dict]) -> str:
     """The sweep's headline: share of the gap each null removes, per model."""
     out = ["# Multi-model sweep — is the modality gap orientation everywhere?",
            "",
-           "Share of the gap removed by each null, within model. Raw MSG is "
-           "listed for reference only:",
-           "its denominator and numerator both depend on the tokeniser, the "
-           "processor's visual-token count and the",
-           "hidden size, so it is **not** comparable across rows. The shares "
-           "are.", "",
-           "| model | dim | read-back | raw MSG | offset | rotation | linear | valid |",
-           "|---|---|---|---|---|---|---|---|"]
+           "**Percentage by which each null shrinks the cross-modal distance at "
+           "the merge position.**",
+           "Reported this way rather than as a share of MSG because MSG's "
+           "denominator is a choice: on Tier B a",
+           "capitalisation-flip control and a font-change control disagree by "
+           "7–9x, which moves the same null",
+           "between \"removes 69%\" and \"removes 132%\". The cross distance is "
+           "the same measurement under either,",
+           "so these columns are comparable across models *and* across control "
+           "designs.",
+           "",
+           "A **negative** figure means that null *increases* the distance. "
+           "That is expected for the offset",
+           "column: subtracting each modality's mean removes a large shared "
+           "component that was making every",
+           "state look alike, so the cosine distance grows.",
+           "",
+           "Raw MSG and the raw cross distance are listed for reference. "
+           "Neither is comparable across rows —",
+           "both depend on the tokeniser, the processor's visual-token count "
+           "and the hidden size.",
+           "",
+           "| model | dim | read-back | raw MSG | raw cross | offset | isometry "
+           "| linear | valid |",
+           "|---|---|---|---|---|---|---|---|---|"]
     for r in rows:
         if r.get("error"):
-            out.append(f"| `{r['model']}` | — | — | — | — | — | — | **{r['error']}** |")
+            out.append(f"| `{r['model']}` | — | — | — | — | — | — | — | "
+                       f"**{r['error']}** |")
             continue
         f = lambda x: "—" if x is None else f"{x:.0%}"      # noqa: E731
-        rb = r.get("readback")
+        rb, rc = r.get("readback"), r.get("raw_cross")
         out.append(
             f"| `{r['model']}` | {r.get('dim', '—')} | "
             f"{'—' if rb is None else f'{rb:.3f}'} | {r['raw']:.2f} | "
-            f"{f(r['offset'])} | {f(r['rotation'])} | {f(r['linear'])} | "
+            f"{'—' if rc is None else f'{rc:.4f}'} | "
+            f"{f(r['offset'])} | {f(r['isometry'])} | {f(r['linear'])} | "
             f"{r['valid']} |")
     out += ["", "A row is invalid when the model cannot read the rendered span, "
-            "or when the map nulls could not be", "fitted with enough distinct "
-            "content to conclude either way — see each run's own report."]
+            "or when the map nulls could not be",
+            "fitted with enough distinct content to conclude either way — see "
+            "each run's own report.",
+            "",
+            "Reference, Qwen3.5-2B at 8000 distinct spans: an isometry cuts the "
+            "cross distance 63–64% and a",
+            "linear map 75–76%, measured under two different text controls."]
     return "\n".join(out)
 
 
@@ -142,10 +179,11 @@ def collect(model: str, out_dir: Path) -> dict:
     if not res or "msg_raw" not in res:
         return {"model": model, "error": "no Tier B geometry"}
 
-    raw = res["msg_raw"]["overall"]["msg"]
-    row = {"model": model, "raw": raw, "valid": "yes"}
+    raw_cross = msg.cross_from_record(res["msg_raw"])
+    row = {"model": model, "raw": res["msg_raw"]["overall"]["msg"],
+           "raw_cross": raw_cross, "valid": "yes"}
     for key, name in (("msg_offset_free", "offset"),
-                      ("msg_procrustes", "rotation"), ("msg_linear", "linear")):
+                      ("msg_procrustes", "isometry"), ("msg_linear", "linear")):
         block = res.get(key) or {}
         fit = block.get("fit") or {}
         # A null that could not be fitted reports nothing rather than a number.
@@ -153,7 +191,7 @@ def collect(model: str, out_dir: Path) -> dict:
             row[name] = None
             row["valid"] = "map nulls untestable"
         else:
-            row[name] = _share(raw, block["overall"]["msg"])
+            row[name] = _reduction(raw_cross, msg.cross_from_record(block))
         if fit.get("dim"):
             row["dim"] = fit["dim"]
     rb = (res.get("readback") or {})
@@ -179,6 +217,12 @@ def main() -> int:
     ap.add_argument("--preflight", action="store_true",
                     help="resolve every model id and report the distinct-span "
                          "requirement each hidden size implies, then stop")
+    ap.add_argument("--summarise-only", action="store_true",
+                    help="rebuild the summary from results already on disk "
+                         "without measuring anything. Use this after a sweep "
+                         "that ran under older analysis code — the numbers come "
+                         "from each run's results.json, so the summary can be "
+                         "regenerated without re-running any model")
     ap.add_argument("--force", action="store_true",
                     help="re-measure models that already have results")
     args = ap.parse_args()
@@ -193,7 +237,9 @@ def main() -> int:
     rows = []
     for i, model in enumerate(models, 1):
         out_dir = root / model.replace("/", "__")
-        if (out_dir / "results.json").exists() and not args.force:
+        if args.summarise_only:
+            pass
+        elif (out_dir / "results.json").exists() and not args.force:
             print(f"[{i}/{len(models)}] {model}: already measured, skipping")
         else:
             print(f"\n[{i}/{len(models)}] {model}")

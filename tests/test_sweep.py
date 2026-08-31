@@ -30,14 +30,23 @@ def _fit(**kw):
 
 
 def _results(tmp_path, **over):
+    # Denominator halves from the real Tier B run, so the reconstructed cross
+    # distances match the ones the project actually measured.
     res = {
         "readback": {"applicable": True, "accuracy": 0.977, "cer": 0.004},
         "functional": {"text_accuracy": 0.996, "image_accuracy": 1.0,
                        "ablated_accuracy": 0.523, "validity_warning": None},
-        "msg_raw": {"overall": {"msg": 3.485}},
-        "msg_offset_free": {"overall": {"msg": 3.331}, "fit": None},
-        "msg_procrustes": {"overall": {"msg": 1.262}, "fit": _fit(kind="orthogonal")},
-        "msg_linear": {"overall": {"msg": 0.858}, "fit": _fit()},
+        "msg_raw": {"overall": {"msg": 3.485},
+                    "within_text_mean": 0.0817, "within_image_mean": 0.0090},
+        "msg_offset_free": {"overall": {"msg": 3.331}, "fit": None,
+                            "within_text_mean": 0.1866,
+                            "within_image_mean": 0.0501},
+        "msg_procrustes": {"overall": {"msg": 1.262},
+                           "fit": _fit(kind="orthogonal"),
+                           "within_text_mean": 0.0817,
+                           "within_image_mean": 0.0094},
+        "msg_linear": {"overall": {"msg": 0.858}, "fit": _fit(),
+                       "within_text_mean": 0.0817, "within_image_mean": 0.0069},
     }
     res.update(over)
     d = tmp_path / "m"
@@ -46,14 +55,22 @@ def _results(tmp_path, **over):
     return d
 
 
-def test_shares_are_computed_within_model(tmp_path):
-    """The one quantity comparable across models: raw MSG depends on the
-    tokeniser, the visual-token count and the hidden size, the shares do not."""
+def test_reductions_are_computed_on_the_cross_distance(tmp_path):
+    """Not on a share of MSG. MSG's denominator is a choice that moves the same
+    null between "removes 69%" and "removes 132%"; the cross distance is the
+    same measurement under either control design."""
     row = sweep.collect("m/x", _results(tmp_path))
-    assert row["valid"] == "yes"
-    assert abs(row["rotation"] - 0.897) < 0.01      # 1-(1.262-1)/(3.485-1)
-    assert row["linear"] > 1.0                      # takes MSG below raw
-    assert row["dim"] == 2048
+    assert row["valid"] == "yes" and row["dim"] == 2048
+    assert abs(row["raw_cross"] - 0.1580) < 0.001
+    assert abs(row["isometry"] - 0.64) < 0.02       # measured 63-64%
+    assert abs(row["linear"] - 0.76) < 0.02         # measured 75-76%
+    # Removing the per-modality mean raises the distance, so this is negative.
+    assert row["offset"] < 0
+
+def test_the_summary_states_why_it_is_not_a_share_of_msg(tmp_path):
+    text = sweep.summarise([sweep.collect("m/x", _results(tmp_path))])
+    assert "cross-modal distance" in text
+    assert "7\u20139x" in text or "7-9x" in text
 
 
 def test_a_model_that_cannot_read_the_span_is_marked_invalid(tmp_path):
@@ -67,7 +84,8 @@ def test_untestable_map_nulls_report_nothing(tmp_path):
     its map nulls must abstain rather than contribute a number to the table."""
     row = sweep.collect("m/x", _results(tmp_path, msg_linear={
         "overall": {"msg": 2.9},
-        "fit": _fit(dim=4096, underdetermined="8000 distinct spans for 4096")}))
+        "fit": _fit(dim=4096, underdetermined="8000 distinct spans for 4096"),
+        "within_text_mean": 0.0817, "within_image_mean": 0.0069}))
     assert row["linear"] is None
     assert row["valid"] == "map nulls untestable"
 
@@ -87,4 +105,4 @@ def test_a_missing_run_does_not_break_the_summary(tmp_path):
 
 def test_the_summary_warns_that_raw_msg_is_not_comparable(tmp_path):
     text = sweep.summarise([sweep.collect("m/x", _results(tmp_path))])
-    assert "not** comparable across rows" in text
+    assert "Neither is comparable across rows" in text

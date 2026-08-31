@@ -122,6 +122,27 @@ def normalized_msg(
     )
 
 
+def cross_from_record(null: dict) -> float | None:
+    """Mean cross-modal distance for one null, from a results.json block.
+
+    Prefers the recorded `cross_mean`; older files predate it, and the ratio
+    with both halves of the denominator recovers it exactly.
+
+    This is the quantity worth comparing. MSG's denominator is a choice --- a
+    capitalisation flip and a font change disagree by 7-9x on Tier B, moving the
+    reported gap by ~10x --- but the numerator is the same measurement under
+    every choice, so its reduction under each null needs no convention stated
+    beside it.
+    """
+    if null.get("cross_mean"):
+        return float(null["cross_mean"])
+    wt, wi = null.get("within_text_mean"), null.get("within_image_mean")
+    msg_value = (null.get("overall") or {}).get("msg")
+    if not (wt and wi and msg_value):
+        return None
+    return float(msg_value) * 0.5 * (wt + wi)
+
+
 def gate1_verdict(result: MSGResult, pass_at: float = 1.5,
                   drop_below: float = 1.25) -> str:
     """Translate an MSG into the Gate 1 branch it implies (docs/GATES.md).
