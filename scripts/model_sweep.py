@@ -161,8 +161,11 @@ def summarise(rows: list[dict]) -> str:
             f"{r['valid']} |")
     out += ["", "A row is invalid when the model cannot read the rendered span, "
             "or when the map nulls could not be",
-            "fitted with enough distinct content to conclude either way — see "
-            "each run's own report.",
+            "or its forced choice failed. A **—** in one null's column means "
+            "that null alone could not",
+            "conclude — the fit collapsed or had too little distinct content — "
+            "and the other columns in that",
+            "row still stand.",
             "",
             "Reference, Qwen3.5-2B at 8000 distinct spans: an isometry cuts the "
             "cross distance 63–64% and a",
@@ -189,7 +192,6 @@ def collect(model: str, out_dir: Path) -> dict:
         # A null that could not be fitted reports nothing rather than a number.
         if fit.get("underdetermined") or fit.get("collapsed") or not fit.get("n_groups", 1):
             row[name] = None
-            row["valid"] = "map nulls untestable"
         else:
             row[name] = _reduction(raw_cross, msg.cross_from_record(block))
         if fit.get("dim"):

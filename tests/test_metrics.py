@@ -564,3 +564,42 @@ class TestCrossValidatedMap:
                               control_retention=0.08)
         assert "retains 8%" in fit.collapsed()
         assert "discarding structure" in fit.collapsed()
+
+
+class TestImagePlaceholder:
+    """Which string marks an image, per processor.
+
+    Hardcoding Qwen's confined the instrument to one family without saying so:
+    the first multi-model sweep returned five Qwen rows and one failure, and the
+    failure was llava, whose placeholder is `<image>`.
+    """
+
+    def test_uses_the_processors_own_token(self):
+        class P:
+            image_token = "<image>"
+
+            class tokenizer:
+                @staticmethod
+                def get_vocab():
+                    return {"<image>": 32000}
+        text, tid = runner.image_placeholder(P())
+        assert text == "<image>" and tid == 32000
+
+    def test_wraps_a_qwen_style_token_in_its_vision_markers(self):
+        class P:
+            image_token = "<|image_pad|>"
+
+            class tokenizer:
+                @staticmethod
+                def get_vocab():
+                    return {"<|image_pad|>": 5, "<|vision_start|>": 6,
+                            "<|vision_end|>": 7}
+        text, tid = runner.image_placeholder(P())
+        assert text == "<|vision_start|><|image_pad|><|vision_end|>"
+        assert tid == 5
+
+    def test_falls_back_when_the_processor_names_no_token(self):
+        class P:
+            pass
+        text, tid = runner.image_placeholder(P())
+        assert "<|image_pad|>" in text and tid is None

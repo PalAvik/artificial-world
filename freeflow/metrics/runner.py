@@ -56,6 +56,34 @@ def _suffix_ids(processor, suffix: str) -> list[int]:
     return tok(suffix, add_special_tokens=False)["input_ids"]
 
 
+# Qwen's placeholder, kept as the fallback because the frozen Gate 0 config and
+# every measurement so far were taken with it.
+_QWEN_IMAGE = "<|vision_start|><|image_pad|><|vision_end|>"
+
+
+def image_placeholder(processor) -> tuple[str, int | None]:
+    """The string that marks where an image goes, for *this* processor.
+
+    Hardcoding Qwen's `<|vision_start|><|image_pad|><|vision_end|>` silently
+    confined the whole instrument to one model family: `llava-hf` uses
+    `<image>`, Gemma uses its own, and a sweep meant to ask "is this true of
+    every decoder VLM" could only ever answer for Qwen. Derived from the
+    processor instead, with the token id returned so the caller can verify the
+    image actually entered the sequence.
+    """
+    token = getattr(processor, "image_token", None)
+    tok = getattr(processor, "tokenizer", processor)
+    if not isinstance(token, str) or not token:
+        return _QWEN_IMAGE, None
+
+    vocab = tok.get_vocab() if hasattr(tok, "get_vocab") else {}
+    text = token
+    # Qwen-style processors expose the bare pad token and expect it wrapped.
+    if "<|vision_start|>" in vocab and "<|vision_end|>" in vocab:
+        text = f"<|vision_start|>{token}<|vision_end|>"
+    return text, vocab.get(token)
+
+
 def build_view(processor, items: Sequence[SpanItem], modality: str,
                variant: str = "primary", device: str = "cuda:0") -> ViewBatch:
     """Tokenise one view of a batch and locate each item's merge position.
@@ -67,6 +95,7 @@ def build_view(processor, items: Sequence[SpanItem], modality: str,
     prev_side = getattr(tok, "padding_side", None)
     tok.padding_side = "right"       # keep absolute indices valid
     try:
+        placeholder, image_id = image_placeholder(processor)
         texts, images = [], []
         for it in items:
             span = (it.span_text if variant == "primary" else it.span_paraphrase)
@@ -74,14 +103,26 @@ def build_view(processor, items: Sequence[SpanItem], modality: str,
             if modality == "text":
                 texts.append(f"{it.prefix}{span}{it.suffix}")
             else:
-                texts.append(f"{it.prefix}<|vision_start|><|image_pad|>"
-                             f"<|vision_end|>{it.suffix}")
+                texts.append(f"{it.prefix}{placeholder}{it.suffix}")
                 images.append(img)
 
         kwargs = dict(text=texts, padding=True, return_tensors="pt")
         if images:
             kwargs["images"] = images
         inputs = processor(**kwargs)
+
+        # An image view that contains no image tokens is text compared with
+        # text: MSG would come out near zero and look like perfect alignment.
+        # The wrong placeholder for an unfamiliar processor is exactly how that
+        # happens, so it is checked rather than assumed.
+        if modality != "text" and "pixel_values" in inputs and image_id is not None:
+            if not (inputs["input_ids"] == image_id).any():
+                raise ValueError(
+                    f"the image view contains no image tokens: placeholder "
+                    f"{placeholder!r} (id {image_id}) never appears in the "
+                    "tokenised sequence. This processor marks images "
+                    "differently, and measuring it would compare text with "
+                    "text")
 
         # merge_index = unpadded length - suffix length. Uses the attention
         # mask rather than the padded shape so it is right for every item.

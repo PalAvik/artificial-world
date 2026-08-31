@@ -87,7 +87,10 @@ def test_untestable_map_nulls_report_nothing(tmp_path):
         "fit": _fit(dim=4096, underdetermined="8000 distinct spans for 4096"),
         "within_text_mean": 0.0817, "within_image_mean": 0.0069}))
     assert row["linear"] is None
-    assert row["valid"] == "map nulls untestable"
+    # The row stays valid: one null abstaining says nothing about the tier, and
+    # the isometry column in the same row is still a measurement.
+    assert row["valid"] == "yes"
+    assert row["isometry"] is not None
 
 
 def test_a_failed_forced_choice_invalidates_the_row(tmp_path):
