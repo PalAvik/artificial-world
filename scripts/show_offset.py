@@ -94,12 +94,27 @@ def main() -> int:
                 print(f"   ({share:.0%} of the gap)")
             else:
                 print()
+            warn = (block.get("fit") or {}).get("underdetermined")
+            if warn:
+                print(f"    {'':<24} ! {warn}")
+                # An under-determined fit cannot support either verdict, so it
+                # must not be allowed to produce one.
+                continue
             ci = block.get("ci")
             upper = ci[1] if ci else block["msg"]
             if upper < DROP_CI_UPPER and survives is None:
                 survives = label
 
+        blocked = [lbl for key, lbl in NULLS
+                   if ((res.get(key) or {}).get("overall") or {})
+                   .get("fit", {}) and
+                   (res[key]["overall"].get("fit") or {}).get("underdetermined")]
         print()
+        if blocked and not survives:
+            print(f"    -> NO VERDICT. {', '.join(blocked)} could not be fitted "
+                  "with enough data to be believed. Raise --n and re-run; do "
+                  "not read a surviving gap as irreducible.")
+            continue
         if survives:
             print(f"    -> REMOVABLE. The gap dies once {survives.lower()} is "
                   f"taken out (upper bound < {DROP_CI_UPPER}): the two views "

@@ -18,14 +18,17 @@ On today's numbers Gate 1 would not pass: one instrument-valid tier of the two
 required, and no positive functional delta. It is nowhere near a DROP — that
 needs a CI upper bound below 1.25 on every tier, against Tier B's 3.096.
 
-- [ ] **Run the linear-map-free MSG.** *Decisive — do this first.* Implemented
-      (`msg_procrustes`, `msg_linear`) and not yet run. Tier B's CKA never drops
-      below 0.906 while its raw distance is 3x the control, which is the
-      signature of a rotation, and a modality adapter *is* a linear map. If a
+- [ ] **Run the linear-map-free MSG at n >= 8000.** *Decisive — do this first.*
+      Implemented (`msg_procrustes`, `msg_linear`) and not yet run. Tier B's CKA
+      never drops below 0.906 while its raw distance is 3x the control, which is
+      the signature of a rotation, and a modality adapter *is* a linear map. If a
       fitted out-of-fold linear map removes the gap, the training program is
       redundant rather than novel and the honest output is a short note.
-      `python scripts/phase1_measure.py --model Qwen/Qwen3.5-2B --n 2000 --tiers B`
-      then `python scripts/show_offset.py`.
+      **n=2000 is not enough**: the hidden state is 2048-dimensional, so a
+      `[D, D]` map has 4.2M parameters and a 5-fold split leaves 1600 rows to fit
+      them. Such a map fails out-of-fold whatever the truth is, and the failure is
+      indistinguishable from an irreducible gap — the error that would favour
+      continuing the project. n=8000 gives ~3.1 rows/dim and clears the guard.
 - [ ] **Get a second valid tier.** PASS needs >=2 of 3. Only Tier B qualifies.
       Tier A is the only route inside the window — Tier C needs a redesign *and*
       re-validation. Needs Flickr30k Entities or Visual Genome on disk

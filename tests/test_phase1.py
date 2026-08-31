@@ -560,8 +560,12 @@ class TestNullHierarchy:
         final = str(len(cap["text"].hidden["layers"]) - 1)
         for mode in ("raw", "offset_free", "procrustes", "linear"):
             d = driver.distances(cap, final, mode, seed=0)
-            assert set(d) == {"cross", "within_text", "within_image"}
-            assert all(torch.isfinite(v).all() for v in d.values())
+            assert set(d) == {"cross", "within_text", "within_image", "fit"}
+            assert all(torch.isfinite(d[k]).all()
+                       for k in ("cross", "within_text", "within_image"))
+            # Only the mapped modes carry a fit, and it reports its own
+            # sample-size adequacy.
+            assert (d["fit"] is None) == (mode in ("raw", "offset_free"))
 
     def test_a_rotated_view_survives_raw_and_dies_under_procrustes(self, stack,
                                                                    corpus):

@@ -73,6 +73,12 @@ def offset_free_distance(a: torch.Tensor, b: torch.Tensor,
     return cosine_distance(_as_float(a) - stats.mean_a, _as_float(b) - stats.mean_b)
 
 
+# Penalties tried when fitting a linear map. Spans six orders of magnitude
+# because the right scale depends on the hidden states' norm, which varies by
+# layer -- the final layer's is ~50x the mid-stack's.
+RIDGE_GRID = (1e-4, 1e-2, 1.0, 1e2, 1e4)
+
+
 @dataclass(frozen=True)
 class MapFit:
     """A fitted map plus the fold structure it was fitted under."""
@@ -80,6 +86,28 @@ class MapFit:
     kind: str
     folds: int
     train_n: int
+    dim: int = 0
+    ridge: float = 0.0
+
+    @property
+    def rows_per_dim(self) -> float:
+        return self.train_n / self.dim if self.dim else 0.0
+
+    def underdetermined(self, need: float = 2.0) -> str | None:
+        """None when the fit had enough data to be believed.
+
+        A `[D, D]` map has D^2 free parameters. Fitted from fewer rows than
+        dimensions it cannot generalise out-of-fold whatever the truth is, and
+        the failure looks exactly like an irreducible gap — the finding that
+        happens to favour continuing the project. So it is checked and reported
+        rather than left to be read off a number.
+        """
+        if self.rows_per_dim >= need:
+            return None
+        return (f"{self.train_n} training rows for {self.dim} dimensions "
+                f"({self.rows_per_dim:.2f} per dim, want >= {need:.0f}). The map "
+                "is under-determined, so a surviving gap is not evidence of one: "
+                "raise --n until this clears")
 
 
 def _fit_map(source: torch.Tensor, target: torch.Tensor, kind: str,
@@ -105,7 +133,8 @@ def _fit_map(source: torch.Tensor, target: torch.Tensor, kind: str,
 def cross_validated_map(source: torch.Tensor, target: torch.Tensor,
                         also: Sequence[torch.Tensor] = (),
                         kind: str = "orthogonal", folds: int = 5,
-                        ridge: float = 1e-3, seed: int = 0
+                        ridge: float | Sequence[float] = RIDGE_GRID,
+                        seed: int = 0
                         ) -> tuple[torch.Tensor, list[torch.Tensor], MapFit]:
     """Map `source` toward `target`, every row predicted out-of-fold.
 
@@ -129,6 +158,13 @@ def cross_validated_map(source: torch.Tensor, target: torch.Tensor,
     `also` carries additional matrices — the within-modality control — through
     the *same* fold's map, so the MSG ratio stays coherent: mapping the
     numerator while leaving the denominator alone would manufacture a collapse.
+
+    **`ridge` may be a grid**, in which case the penalty is chosen by the
+    out-of-fold distance it achieves. That is mildly optimistic for the map —
+    the same held-out rows pick the penalty and score it — and deliberately so:
+    the claim being tested is that the gap *survives* a linear map, so every
+    thumb on the scale should favour the map. A gap that survives a penalty
+    chosen in its own favour is the only kind worth reporting.
     """
     source, target = _as_float(source), _as_float(target)
     also = [_as_float(x) for x in also]
@@ -138,22 +174,35 @@ def cross_validated_map(source: torch.Tensor, target: torch.Tensor,
                          f"cross-validated map; got {n}")
 
     perm = torch.randperm(n, generator=torch.Generator().manual_seed(seed))
-    out = torch.empty_like(source)
-    out_also = [torch.empty_like(x) for x in also]
-    train_sizes = []
+    folds_idx = []
     for f in range(folds):
         test_idx = perm[f::folds]
         mask = torch.ones(n, dtype=torch.bool)
         mask[test_idx] = False
-        train_idx = torch.arange(n)[mask]
-        train_sizes.append(int(train_idx.numel()))
-        A, mean_s, mean_t = _fit_map(source[train_idx], target[train_idx],
-                                     kind, ridge)
-        out[test_idx] = (source[test_idx] - mean_s) @ A + mean_t
-        for j, x in enumerate(also):
-            out_also[j][test_idx] = (x[test_idx] - mean_s) @ A + mean_t
-    return out, out_also, MapFit(kind=kind, folds=folds,
-                                 train_n=min(train_sizes))
+        folds_idx.append((torch.arange(n)[mask], test_idx))
+
+    # Procrustes has no penalty to tune; a grid would just repeat the same fit.
+    grid = ([0.0] if kind == "orthogonal"
+            else ([ridge] if isinstance(ridge, (int, float)) else list(ridge)))
+
+    best = None
+    for lam in grid:
+        out = torch.empty_like(source)
+        out_also = [torch.empty_like(x) for x in also]
+        for train_idx, test_idx in folds_idx:
+            A, mean_s, mean_t = _fit_map(source[train_idx], target[train_idx],
+                                         kind, float(lam))
+            out[test_idx] = (source[test_idx] - mean_s) @ A + mean_t
+            for j, x in enumerate(also):
+                out_also[j][test_idx] = (x[test_idx] - mean_s) @ A + mean_t
+        score = float(cosine_distance(out, target).mean())
+        if best is None or score < best[0]:
+            best = (score, out, out_also, float(lam))
+
+    _, out, out_also, lam = best
+    train_n = min(int(t.numel()) for t, _ in folds_idx)
+    return out, out_also, MapFit(kind=kind, folds=folds, train_n=train_n,
+                                 dim=int(source.shape[1]), ridge=lam)
 
 
 def linear_cka(a: torch.Tensor, b: torch.Tensor) -> float:

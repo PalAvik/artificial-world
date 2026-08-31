@@ -427,6 +427,38 @@ class TestCrossValidatedMap:
         # MSG denominator survives the mapping intact.
         assert geometry.cosine_distance(mapped, extra[0]).mean() < 0.15
 
+    def test_an_underdetermined_fit_reports_itself(self):
+        """The failure mode that would favour continuing the project: fitted
+        from fewer rows than dimensions, a map fails out-of-fold whatever the
+        truth is, and the failure is indistinguishable from an irreducible
+        gap."""
+        torch.manual_seed(0)
+        thin = geometry.cross_validated_map(torch.randn(40, 64),
+                                            torch.randn(40, 64),
+                                            kind="linear")[2]
+        assert thin.rows_per_dim < 1
+        assert "under-determined" in thin.underdetermined()
+
+        fat = geometry.cross_validated_map(torch.randn(400, 16),
+                                           torch.randn(400, 16),
+                                           kind="linear")[2]
+        assert fat.rows_per_dim >= 2 and fat.underdetermined() is None
+
+    def test_the_penalty_is_chosen_to_favour_the_map(self):
+        """The grid is scored out-of-fold and the best penalty wins, so the null
+        gets its best shot. A gap that survives a penalty picked in its own
+        favour is the only kind worth reporting."""
+        torch.manual_seed(0)
+        n, d = 300, 16
+        target = torch.randn(n, d)
+        source = target + 0.3 * torch.randn(n, d)
+        best = geometry.cross_validated_map(source, target, kind="linear")
+        fixed = geometry.cross_validated_map(source, target, kind="linear",
+                                             ridge=1e4)
+        assert (geometry.cosine_distance(best[0], target).mean()
+                <= geometry.cosine_distance(fixed[0], target).mean() + 1e-6)
+        assert best[2].ridge in geometry.RIDGE_GRID
+
     def test_refuses_to_fit_on_too_few_items(self):
         with pytest.raises(ValueError, match="at least"):
             geometry.cross_validated_map(torch.randn(3, 8), torch.randn(3, 8))

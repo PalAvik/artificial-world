@@ -111,11 +111,12 @@ def distances(cap: dict, layer_key: str, mode: str = "raw",
     h_tc = cap["text_control"].hidden[layer_key]
     h_ic = cap["image_control"].hidden[layer_key]
 
+    fit = None
     if mode in ("procrustes", "linear"):
         kind = "orthogonal" if mode == "procrustes" else "linear"
         # Map the image view onto the text view, carrying the image control
         # through the same fold's map so the ratio stays coherent.
-        h_i, (h_ic,), _ = geometry.cross_validated_map(
+        h_i, (h_ic,), fit = geometry.cross_validated_map(
             h_i, h_t, also=[h_ic], kind=kind, seed=seed)
         mode = "raw"
 
@@ -123,7 +124,8 @@ def distances(cap: dict, layer_key: str, mode: str = "raw",
          else geometry.cosine_distance)
     return {"cross": d(h_t, h_i),
             "within_text": d(h_t, h_tc),
-            "within_image": d(h_i, h_ic)}
+            "within_image": d(h_i, h_ic),
+            "fit": fit}
 
 
 def measure_tier(model, processor, items, batch: int, layers, device: str,
@@ -197,6 +199,13 @@ def measure_tier(model, processor, items, batch: int, layers, device: str,
         d = distances(cap, final, mode, seed=seed)
         report = aggregate.conditioned_msg(
             d["cross"], d["within_text"], d["within_image"], groups, read_ok)
+        fit = d.get("fit")
+        # An under-determined map fails out-of-fold whatever the truth is, and
+        # the failure looks exactly like an irreducible gap. Say so loudly: it
+        # is the error that would favour continuing the project.
+        fit_warning = fit.underdetermined() if fit else None
+        if fit_warning:
+            print(f"    ! {name}: {fit_warning}")
         out[name] = {
             "overall": _msg_dict(report.unconditional.overall),
             "by_group": {k: _msg_dict(v)
@@ -212,6 +221,11 @@ def measure_tier(model, processor, items, batch: int, layers, device: str,
             "within_text_mean": float(d["within_text"].mean()),
             "within_image_mean": float(d["within_image"].mean()),
             "denominator_warning": _denominator_warning(d),
+            "fit": ({"kind": fit.kind, "folds": fit.folds,
+                     "train_n": fit.train_n, "dim": fit.dim,
+                     "ridge": fit.ridge,
+                     "rows_per_dim": fit.rows_per_dim,
+                     "underdetermined": fit_warning} if fit else None),
         }
         if out[name]["denominator_warning"]:
             print(f"    ! {name}: {out[name]['denominator_warning']}")
