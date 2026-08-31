@@ -154,3 +154,14 @@ def test_low_readback_is_flagged(tmp_path):
         "validity_warning": None, "delta_warning": None}
     out = _run(doc, tmp_path)
     assert "below 0.95" in out and "contaminate MSG" in out
+
+
+def test_msg_is_reported_against_each_control_separately(tmp_path):
+    """The two controls differ ~9x on Tier B, so the arithmetic mean is
+    dominated by the larger and the headline moves ~10x with the convention.
+    The bracket has to be visible or the number is not interpretable."""
+    doc = _doc(msg_offset_free=_null(3.331, 3.310, 3.351, wt=0.0817, wi=0.0090))
+    out = _run(doc, tmp_path)
+    # cross = 3.331 * 0.5 * (0.0817 + 0.0090) = 0.15106
+    assert "vs text control 1.85" in out, out
+    assert "vs image control 16.78" in out, out

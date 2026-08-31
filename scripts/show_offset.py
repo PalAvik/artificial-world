@@ -163,8 +163,18 @@ def main() -> int:
             # above; conflating the two produced a false NO VERDICT here.
             wt, wi = null.get("within_text_mean"), null.get("within_image_mean")
             if wt and wi:
+                # MSG averages these two, and on Tier B they differ by ~9x: a
+                # capitalisation flip re-tokenises the span, a font change does
+                # not. An arithmetic mean of two such distances is dominated by
+                # the larger, so the headline MSG is an artefact of the
+                # convention as much as of the model. Report the ratio against
+                # each control so the reader can see the bracket.
+                cross = block["msg"] * 0.5 * (wt + wi)
                 print(f"    {'':<24}   denominator halves: within-text {wt:.4f}"
                       f" / within-image {wi:.4f} ({wt / wi:.1f}x)")
+                print(f"    {'':<24}   MSG vs text control {cross / wt:.2f}"
+                      f" · vs image control {cross / wi:.2f}"
+                      f" · geometric mean {cross / (wt * wi) ** 0.5:.2f}")
             if null.get("denominator_warning"):
                 print(f"    {'':<24} ~ {null['denominator_warning']}")
 
