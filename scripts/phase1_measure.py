@@ -38,6 +38,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import argparse
 import json
 import time
+from typing import Sequence
 from dataclasses import asdict
 from pathlib import Path
 
@@ -90,8 +91,28 @@ def build_corpus(tier: str, n: int, fonts: FontSet, cfg: RenderConfig,
         "on disk; load it with freeflow.data.tier_a and pass the items in.")
 
 
+def _implausible_map(cross, within_text, within_image) -> str | None:
+    """Flag a mapped gap that is too good to be a change of basis.
+
+    The mapped cross-modal distance should not fall below the within-modality
+    control: that would mean a fitted linear map predicts the text state more
+    accurately than the model's own representation of the *same content* varies
+    between a span and its paraphrase. Nothing legitimate does that. It is the
+    signature of a map that has memorised particular spans, which is what
+    happens when folds split rows rather than content.
+    """
+    c = float(cross.mean())
+    w = 0.5 * (float(within_text.mean()) + float(within_image.mean()))
+    if w > 0 and c < 0.5 * w:
+        return (f"mapped cross-modal distance {c:.5f} is below the "
+                f"within-modality control {w:.5f} — the map predicts the text "
+                "state better than a same-content paraphrase differs from it, "
+                "which no change of basis can do. Suspect leakage across folds")
+    return None
+
+
 def distances(cap: dict, layer_key: str, mode: str = "raw",
-              seed: int = 0) -> dict:
+              seed: int = 0, groups: Sequence | None = None) -> dict:
     """Cross-modal and within-modality distances at one captured layer.
 
     `mode` selects which null the gap is measured against — a hierarchy of
@@ -117,7 +138,7 @@ def distances(cap: dict, layer_key: str, mode: str = "raw",
         # Map the image view onto the text view, carrying the image control
         # through the same fold's map so the ratio stays coherent.
         h_i, (h_ic,), fit = geometry.cross_validated_map(
-            h_i, h_t, also=[h_ic], kind=kind, seed=seed)
+            h_i, h_t, also=[h_ic], kind=kind, seed=seed, groups=groups)
         mode = "raw"
 
     d = (geometry.offset_free_distance if mode == "offset_free"
@@ -196,14 +217,19 @@ def measure_tier(model, processor, items, batch: int, layers, device: str,
     for name, mode in (("msg_raw", "raw"), ("msg_offset_free", "offset_free"),
                        ("msg_procrustes", "procrustes"),
                        ("msg_linear", "linear")):
-        d = distances(cap, final, mode, seed=seed)
+        d = distances(cap, final, mode, seed=seed,
+                      groups=cap["text"].span_ids)
         report = aggregate.conditioned_msg(
             d["cross"], d["within_text"], d["within_image"], groups, read_ok)
         fit = d.get("fit")
         # An under-determined map fails out-of-fold whatever the truth is, and
         # the failure looks exactly like an irreducible gap. Say so loudly: it
         # is the error that would favour continuing the project.
-        fit_warning = fit.underdetermined() if fit else None
+        fit_warning = None
+        if fit:
+            fit_warning = (fit.leakage() or fit.underdetermined()
+                           or _implausible_map(d["cross"], d["within_text"],
+                                               d["within_image"]))
         if fit_warning:
             print(f"    ! {name}: {fit_warning}")
         out[name] = {
@@ -225,6 +251,7 @@ def measure_tier(model, processor, items, batch: int, layers, device: str,
                      "train_n": fit.train_n, "dim": fit.dim,
                      "ridge": fit.ridge,
                      "rows_per_dim": fit.rows_per_dim,
+                     "n_groups": fit.n_groups,
                      "underdetermined": fit_warning} if fit else None),
         }
         if out[name]["denominator_warning"]:

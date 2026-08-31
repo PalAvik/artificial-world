@@ -362,6 +362,66 @@ rule for 2026-09-16:
 Recording the amendment's direction honestly: it makes the gate **harder** to
 pass, not easier, and it was written before the number existed.
 
+**2026-08-31, linear-map run — the result is a bug of mine, not a finding.**
+
+| null | Tier B MSG | 95% CI | share of the gap |
+|---|---|---|---|
+| raw | 3.012 | [2.975, 3.047] | — |
+| offset-free | 2.988 | [2.960, 3.014] | 1% |
+| rotation-free | 0.702 | [0.692, 0.711] | 115% |
+| linear-map-free | **0.006** | [0.006, 0.007] | 149% |
+
+`show_offset.py` printed REMOVABLE. It is wrong, and the number says so on its
+face: **MSG 0.006 means the mapped cross-modal distance is 0.0003 against a
+within-modality control of 0.049.** A fitted linear map predicted the text state
+*167x more accurately than a same-content paraphrase of that text differs from
+it*. No change of basis can do that. A "share of the gap" above 100% is the same
+statement in another form.
+
+**Cause: the folds split rows, and rows are not independent.** Tier B draws on
+150 words and 4 contexts — 600 distinct configurations — so at n=8000 each
+configuration recurs about 13 times, differing only in typeface. Every held-out
+row therefore had ~10 near-twins in the training folds, and the map memorised
+span by span instead of learning a change of basis. Folds are now assigned by
+span identity, so a held-out span is genuinely unseen.
+
+**The deeper error: `rows_per_dim` was the wrong sufficiency check, and it
+passed.** I added that guard specifically to stop an under-powered fit being
+read as a finding, computed the n needed, and told you to run n=8000 to clear
+it. It cleared it — 3.1 rows per dimension — while the fit rested on 150
+distinct spans against 2048 dimensions, or **0.07 constraints per dimension**.
+Rendering one word thirteen times gives thirteen rows and one constraint. The
+guard counted rows.
+
+This matters beyond the bug, because it decides whether the experiment is
+runnable at all:
+
+> A `[D, D]` map can place each span's image state exactly onto its text state
+> whenever `D >= (number of distinct spans)`. With D = 2048 and 150 spans that
+> is trivially satisfied, **and no quantity of extra renderings repairs it.**
+
+So the linear-map null is not merely mismeasured — **it is untestable with the
+current corpus**, and was untestable before the run. Testing it needs a
+vocabulary several times the hidden dimension: ~8000 distinct spans for
+`need >= 2`, against the 150 that exist. Both errors now point opposite ways and
+are guarded together: too few constraints and the map memorises (reads as
+"removable"), barely more and it cannot extrapolate (reads as "irreducible"), so
+neither verdict is issued below threshold.
+
+**What survives.** The raw and offset-free numbers are untouched — they involve
+no fitting, and they reproduced closely at n=8000 (3.012 vs 3.023, offset share
+1% both times). The rotation-free number (0.702) is contaminated by the same
+leakage and is withdrawn. Gate 1's status is unchanged: not passed, not a drop,
+decision due 2026-09-16.
+
+**Process note.** This is the third measurement in this project reported as a
+result before its validity check existed — after Tier C's read-back and the
+forced choice's floor. In all three the number was confident, tight-CI, and
+wrong, and in all three the check that exposed it was cheap and could have been
+written first. The pattern is not bad luck. The instrument now refuses to issue
+a verdict from an under-powered or row-split fit, but the general lesson is that
+a validity check belongs in the same commit as the metric it guards.
+
 ## Gate 2 — Is it trainable, and is the effect real? · due end of Week 7
 _Not yet reached._
 

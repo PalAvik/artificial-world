@@ -14,6 +14,7 @@ modality gap gets measured.
 """
 from __future__ import annotations
 
+import random
 from dataclasses import dataclass
 from typing import Sequence
 
@@ -88,26 +89,59 @@ class MapFit:
     train_n: int
     dim: int = 0
     ridge: float = 0.0
+    n_groups: int = 0
+
+    def leakage(self) -> str | None:
+        """None when the folds held out content rather than merely rows."""
+        if self.n_groups:
+            return None
+        return ("folds split rows, not content. When the same span is rendered "
+                "many times, a held-out row has near-twins in the training "
+                "folds and the map memorises rather than generalising: pass "
+                "`groups`")
 
     @property
     def rows_per_dim(self) -> float:
         return self.train_n / self.dim if self.dim else 0.0
 
-    def underdetermined(self, need: float = 2.0) -> str | None:
-        """None when the fit had enough data to be believed.
+    @property
+    def effective_n(self) -> int:
+        """Independent constraints on the map — distinct content, not rows.
 
-        A `[D, D]` map has D^2 free parameters. Fitted from fewer rows than
-        dimensions it cannot generalise out-of-fold whatever the truth is, and
-        the failure looks exactly like an irreducible gap — the finding that
-        happens to favour continuing the project. So it is checked and reported
-        rather than left to be read off a number.
+        Rendering one span in thirteen typefaces gives thirteen rows and one
+        constraint. Counting rows was the original mistake here: an n=8000 run
+        cleared a rows-per-dimension check while resting on 150 distinct spans.
         """
-        if self.rows_per_dim >= need:
+        return self.n_groups or self.train_n
+
+    @property
+    def per_dim(self) -> float:
+        return self.effective_n / self.dim if self.dim else 0.0
+
+    def underdetermined(self, need: float = 2.0) -> str | None:
+        """None when the fit had enough *independent content* to be believed.
+
+        Two distinct failures, opposite in direction, both fatal.
+
+        Too few constraints and the map can place each span's image state
+        exactly onto its text state — possible whenever the dimension exceeds
+        the number of distinct spans, and no amount of extra rows repairs it.
+        That manufactures a collapse and reads as "the gap is removable".
+
+        Too few constraints *also* means a map that must extrapolate to unseen
+        content will fail whatever the truth is, which reads as "the gap is
+        irreducible". Since the two errors point opposite ways, neither verdict
+        survives a shortfall here.
+        """
+        if self.per_dim >= need:
             return None
-        return (f"{self.train_n} training rows for {self.dim} dimensions "
-                f"({self.rows_per_dim:.2f} per dim, want >= {need:.0f}). The map "
-                "is under-determined, so a surviving gap is not evidence of one: "
-                "raise --n until this clears")
+        unit = "distinct spans" if self.n_groups else "training rows"
+        return (f"{self.effective_n} {unit} for {self.dim} dimensions "
+                f"({self.per_dim:.2f} per dim, want >= {need:.0f}). A [D, D] map "
+                f"has {self.dim}^2 parameters, so with fewer distinct spans than "
+                "dimensions it can memorise them one by one and with barely more "
+                "it cannot generalise — neither verdict is available. Widen the "
+                "vocabulary; more renderings of the same words will not help")
 
 
 def _fit_map(source: torch.Tensor, target: torch.Tensor, kind: str,
@@ -130,11 +164,30 @@ def _fit_map(source: torch.Tensor, target: torch.Tensor, kind: str,
     raise ValueError(f"unknown map kind {kind!r}; expected orthogonal or linear")
 
 
+def _group_folds(groups: Sequence, folds: int, seed: int) -> list[torch.Tensor]:
+    """Fold assignment in which a whole group is held out together.
+
+    Rows in this corpus are not independent: the same span appears many times
+    with different renderings, so a row-wise split leaves every held-out row
+    with near-twins in the training folds and the map can memorise instead of
+    generalising. Splitting on groups is what makes "out-of-fold" mean
+    "out-of-span".
+    """
+    uniq = sorted({str(g) for g in groups})
+    rng = random.Random(seed)
+    rng.shuffle(uniq)
+    assign = {g: i % folds for i, g in enumerate(uniq)}
+    per_fold = [[] for _ in range(folds)]
+    for row, g in enumerate(groups):
+        per_fold[assign[str(g)]].append(row)
+    return [torch.tensor(rows, dtype=torch.long) for rows in per_fold]
+
+
 def cross_validated_map(source: torch.Tensor, target: torch.Tensor,
                         also: Sequence[torch.Tensor] = (),
                         kind: str = "orthogonal", folds: int = 5,
                         ridge: float | Sequence[float] = RIDGE_GRID,
-                        seed: int = 0
+                        seed: int = 0, groups: Sequence | None = None
                         ) -> tuple[torch.Tensor, list[torch.Tensor], MapFit]:
     """Map `source` toward `target`, every row predicted out-of-fold.
 
@@ -151,9 +204,20 @@ def cross_validated_map(source: torch.Tensor, target: torch.Tensor,
     distance reports them as far apart. Only fitting the map distinguishes
     "differently oriented" from "differently informed".
 
-    **Held out, necessarily.** A map fitted and evaluated on the same items can
-    drive any distance to zero given enough dimensions, which would prove
-    nothing at all. Every row here is predicted by a map that never saw it.
+    **Held out, necessarily, and held out by group.** A map fitted and evaluated
+    on the same items can drive any distance to zero given enough dimensions,
+    which would prove nothing at all. But holding out *rows* is not enough when
+    rows repeat content: this corpus renders each span many times in different
+    typefaces, so a row-wise split leaves every held-out row with near-twins in
+    the training folds, and the map memorises span-by-span rather than learning
+    a change of basis. Pass `groups` (span identity) so a held-out span is
+    genuinely unseen.
+
+    The symptom of getting this wrong is unmistakable once looked for: the
+    mapped cross-modal distance drops *below* the within-modality control, i.e.
+    the map predicts the text state more accurately than a same-content
+    paraphrase of that text differs from it. No change of basis can do that.
+    `MapFit.implausible` checks for it.
 
     `also` carries additional matrices — the within-modality control — through
     the *same* fold's map, so the MSG ratio stays coherent: mapping the
@@ -173,10 +237,22 @@ def cross_validated_map(source: torch.Tensor, target: torch.Tensor,
         raise ValueError(f"need at least {max(folds, 2)} items to fit a "
                          f"cross-validated map; got {n}")
 
-    perm = torch.randperm(n, generator=torch.Generator().manual_seed(seed))
+    if groups is not None:
+        if len(groups) != n:
+            raise ValueError(f"groups has {len(groups)} entries for {n} rows")
+        n_groups = len({str(g) for g in groups})
+        if n_groups < folds:
+            raise ValueError(
+                f"{n_groups} distinct groups cannot fill {folds} folds; a map "
+                "cannot be shown to generalise across content that does not vary")
+        test_folds = _group_folds(groups, folds, seed)
+    else:
+        perm = torch.randperm(n, generator=torch.Generator().manual_seed(seed))
+        test_folds = [perm[f::folds] for f in range(folds)]
+        n_groups = 0
+
     folds_idx = []
-    for f in range(folds):
-        test_idx = perm[f::folds]
+    for test_idx in test_folds:
         mask = torch.ones(n, dtype=torch.bool)
         mask[test_idx] = False
         folds_idx.append((torch.arange(n)[mask], test_idx))
@@ -202,7 +278,8 @@ def cross_validated_map(source: torch.Tensor, target: torch.Tensor,
     _, out, out_also, lam = best
     train_n = min(int(t.numel()) for t, _ in folds_idx)
     return out, out_also, MapFit(kind=kind, folds=folds, train_n=train_n,
-                                 dim=int(source.shape[1]), ridge=lam)
+                                 dim=int(source.shape[1]), ridge=lam,
+                                 n_groups=n_groups)
 
 
 def linear_cka(a: torch.Tensor, b: torch.Tensor) -> float:

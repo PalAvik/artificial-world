@@ -436,13 +436,28 @@ class TestCrossValidatedMap:
         thin = geometry.cross_validated_map(torch.randn(40, 64),
                                             torch.randn(40, 64),
                                             kind="linear")[2]
-        assert thin.rows_per_dim < 1
-        assert "under-determined" in thin.underdetermined()
+        assert thin.per_dim < 1
+        assert "neither verdict is available" in thin.underdetermined()
 
         fat = geometry.cross_validated_map(torch.randn(400, 16),
                                            torch.randn(400, 16),
                                            kind="linear")[2]
-        assert fat.rows_per_dim >= 2 and fat.underdetermined() is None
+        assert fat.per_dim >= 2 and fat.underdetermined() is None
+
+    def test_repeated_content_does_not_count_as_sample_size(self):
+        """Thirteen renderings of one span are thirteen rows and one
+        constraint. Counting rows is what let an n=8000 run clear the guard
+        while resting on 150 distinct spans."""
+        torch.manual_seed(0)
+        d, n_spans, reps = 32, 10, 40          # 400 rows, 10 distinct spans
+        groups = [f"s{i}" for i in range(n_spans) for _ in range(reps)]
+        fit = geometry.cross_validated_map(torch.randn(400, d),
+                                           torch.randn(400, d),
+                                           kind="linear", groups=groups)[2]
+        assert fit.effective_n == n_spans and fit.rows_per_dim > 2
+        assert "distinct spans" in fit.underdetermined()
+        assert "more renderings of the same words will not help" in \
+            fit.underdetermined()
 
     def test_the_penalty_is_chosen_to_favour_the_map(self):
         """The grid is scored out-of-fold and the best penalty wins, so the null
@@ -458,6 +473,45 @@ class TestCrossValidatedMap:
         assert (geometry.cosine_distance(best[0], target).mean()
                 <= geometry.cosine_distance(fixed[0], target).mean() + 1e-6)
         assert best[2].ridge in geometry.RIDGE_GRID
+
+    def test_a_rowwise_split_memorises_repeated_spans(self):
+        """The bug that produced linear-map-free MSG 0.006 on 2026-08-31.
+
+        Each span appears many times with different renderings. Split by row,
+        a held-out row has near-twins in training and the map memorises; split
+        by span, it must actually generalise. The corpus is built so that no
+        linear map relates the two modalities, so *any* low distance here is
+        leakage rather than structure.
+        """
+        torch.manual_seed(0)
+        n_spans, reps, d = 40, 13, 64   # d >= n_spans: memorisable
+        # One arbitrary text state and one arbitrary image state per span, with
+        # no linear relation between them; repetitions differ only by noise.
+        text_of = torch.randn(n_spans, d)
+        image_of = torch.randn(n_spans, d)
+        groups, text, image = [], [], []
+        for s_i in range(n_spans):
+            for _ in range(reps):
+                groups.append(f"span{s_i}")
+                text.append(text_of[s_i] + 0.01 * torch.randn(d))
+                image.append(image_of[s_i] + 0.01 * torch.randn(d))
+        text, image = torch.stack(text), torch.stack(image)
+
+        rowwise = geometry.cross_validated_map(image, text, kind="linear")
+        grouped = geometry.cross_validated_map(image, text, kind="linear",
+                                               groups=groups)
+        d_row = float(geometry.cosine_distance(rowwise[0], text).mean())
+        d_grp = float(geometry.cosine_distance(grouped[0], text).mean())
+        # Row-wise looks like a near-perfect map; grouped reveals there is none.
+        assert d_row < 0.1, d_row
+        assert d_grp > 0.5, d_grp
+        assert rowwise[2].leakage() is not None
+        assert grouped[2].leakage() is None
+
+    def test_refuses_to_fit_when_content_does_not_vary(self):
+        with pytest.raises(ValueError, match="cannot fill"):
+            geometry.cross_validated_map(torch.randn(50, 8), torch.randn(50, 8),
+                                         groups=["a"] * 25 + ["b"] * 25)
 
     def test_refuses_to_fit_on_too_few_items(self):
         with pytest.raises(ValueError, match="at least"):

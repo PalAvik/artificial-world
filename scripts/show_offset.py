@@ -94,7 +94,11 @@ def main() -> int:
                 print(f"   ({share:.0%} of the gap)")
             else:
                 print()
-            warn = (block.get("fit") or {}).get("underdetermined")
+            fit = block.get("fit") or {}
+            warn = fit.get("underdetermined")
+            if fit and not fit.get("n_groups"):
+                warn = warn or ("folds split rows rather than content — a map "
+                                "fitted this way memorises repeated spans")
             if warn:
                 print(f"    {'':<24} ! {warn}")
                 # An under-determined fit cannot support either verdict, so it
