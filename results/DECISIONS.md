@@ -464,8 +464,74 @@ by construction and cannot collapse, its folds held out 8000 distinct spans at
 The gap is overwhelmingly a matter of orientation, and what remains after the
 best rotation sits at the edge of the pre-registered line.
 
-**Gate 1 is not decided.** The drop rule turns on the linear-map number, which
-does not yet exist. The re-run under the collapse constraint produces it.
+**Correction, same day: the collapse verdict above was my reporter's error, not
+the map's.** `show_offset.py` compared the *mapped image* control against the
+*unmapped text* control and called an 0.08 ratio a collapse. Those are different
+quantities. Collapse is mapped-vs-unmapped image control, which the fit reports
+as `control_retention` = **77%** — the map preserved the structure. The linear
+number is valid.
+
+**What the 0.08 actually is, and it matters more than the false alarm.** The two
+halves of the MSG denominator differ by **9.1x before any map is fitted**:
+
+| control | what it does | distance at the merge position |
+|---|---|---|
+| text, `wisdom` -> `WISDOM` | re-tokenises the span entirely | **0.0817** |
+| image, one font -> another | same glyph sequence, different shapes | **0.0090** |
+
+Reconstructing the raw cross distance from these gives 0.1580 against the
+per-layer table's 0.1579, so the decomposition is exact.
+
+Two consequences. First, **MSG is not the symmetric quantity its formula
+suggests**: the denominator is 90% set by the text control, so the ratio mostly
+asks "how does crossing modalities compare with *re-tokenising* the same word?"
+Second, and more interesting, **the model is nearly font-invariant at the merge
+position** — re-rendering the same word in a different typeface moves the state
+by 0.009, an order of magnitude less than re-casing it moves the text view. That
+is a positive finding about the visual pathway and it has been sitting inside the
+denominator unexamined since the first Phase 1 run.
+
+### The Tier B numbers as they now stand
+
+| null | MSG | 95% CI | share | fit | status |
+|---|---|---|---|---|---|
+| raw | 3.485 | [3.460, 3.510] | — | — | valid |
+| offset-free | 3.331 | [3.310, 3.351] | 6% | — | valid |
+| rotation-free | 1.262 | [1.252, 1.272] | 89% | orthogonal, retention 106% | valid |
+| linear-map-free | **0.858** | [0.851, 0.865] | 106% | ridge 100, 8000 spans, 6.2 rows/dim, retention 77% | **valid** |
+
+**The pre-registered drop condition is met.** The linear-map-free CI upper bound
+is 0.865, below 1.25. A fitted out-of-fold linear map, held out by distinct span
+and preserving 77% of the within-modality control, closes the entire gap. A
+rotation alone closes 89% of it.
+
+**Reading it plainly:** at the merge position of a 2B VLM, the orthographic
+modality gap is a *change of basis*, not a difference in information. That is a
+transform a standard vision-to-language projector already implements. The gap is
+large (3.5x the within-modality control), reproducible, and almost entirely
+orientation.
+
+**Consequence per the rule written before the number existed: do not proceed to
+Phase 2. The honest output is a short negative note.** The method — merge
+position, normalised MSG, orthographic substitution, the span-free floor, the
+out-of-fold null hierarchy — is the contribution, and the null result is the
+finding it produces.
+
+**Three things this does not settle**, and they are the only reasons to spend the
+remaining days before 2026-09-16:
+1. **Tier P**, natural-object substitution, is a different question and is built
+   but unrun. Its map null is untestable below ~4096 categories, so it can only
+   deliver MSG and the forced choice.
+2. **The synonym control** would rebalance a denominator currently set 90% by
+   capitalisation. It cannot change the linear-map verdict, which is a ratio
+   computed the same way throughout.
+3. **The font-invariance finding** (0.009) deserves its own reporting rather
+   than sitting inside a denominator.
+
+**Process note.** This is the third time in two days I reported a verdict before
+its check was sound: the drop called on a contaminated number, then a collapse
+called by a miscalibrated check, then the retraction of that collapse. The
+common cause is that I state a conclusion in the same turn the number arrives.
 
 ## Gate 2 — Is it trainable, and is the effect real? · due end of Week 7
 _Not yet reached._

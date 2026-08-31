@@ -80,19 +80,32 @@ def test_an_underdetermined_fit_is_refused(tmp_path):
     assert "NO VERDICT" in out
 
 
-def test_a_collapsed_image_control_is_refused(tmp_path):
-    """Only the image half of the denominator passes through the map, so a map
-    that collapsed it would look exactly like a vanished gap."""
-    out = _run(_doc(msg_linear=_null(0.20, 0.19, 0.21, fit=_fit(),
-                                     wt=0.049, wi=0.004)), tmp_path)
-    assert "IMAGE CONTROL COLLAPSED" in out
-    assert "REMOVABLE" not in out
+def test_a_collapsed_map_is_refused(tmp_path):
+    """Collapse is mapped-vs-unmapped image control, reported by the fit."""
+    out = _run(_doc(msg_linear=_null(0.20, 0.19, 0.21, wt=0.049, wi=0.004,
+        fit=_fit(control_retention=0.08,
+                 collapsed="the map retains 8% of the within-modality control"))),
+        tmp_path)
+    assert "retains 8%" in out
+    assert "NO VERDICT" in out and "REMOVABLE" not in out
+
+
+def test_asymmetric_denominator_halves_are_not_a_collapse(tmp_path):
+    """The false NO VERDICT of 2026-08-31. A capitalisation flip re-tokenises
+    the span and a font change does not, so the two halves differ ~9x before
+    any map exists. That is a caveat on the ratio, not a broken fit."""
+    out = _run(_doc(msg_linear=_null(0.858, 0.851, 0.865, wt=0.0817, wi=0.0069,
+                                     fit=_fit(control_retention=0.77))), tmp_path)
+    assert "denominator halves" in out and "11.8x" in out
+    assert "NO VERDICT" not in out
+    assert "REMOVABLE" in out
 
 
 def test_a_sound_sub_one_result_is_reported_as_removable(tmp_path):
     out = _run(_doc(msg_linear=_null(0.858, 0.851, 0.865, fit=_fit(),
                                      wt=0.049, wi=0.041)), tmp_path)
-    assert "both halves of the denominator survive" in out
+    assert "denominator halves" in out
+    assert "control retained 100%" in out
     assert "REMOVABLE" in out
 
 

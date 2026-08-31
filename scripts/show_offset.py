@@ -124,25 +124,19 @@ def main() -> int:
                 blocked.append(label)
                 continue
 
-            # MSG below 1 says the mapped cross-modal distance is smaller than
-            # the within-modality controls. That can be real -- a fitted map
-            # optimises for proximity where a paraphrase does not -- but it is
-            # also what a map that collapsed the image side would produce, since
-            # only the image half of the denominator passes through the map.
+            # The two halves of the denominator, printed for every null. These
+            # are NOT interchangeable and comparing them is not a collapse test:
+            # the text control is a capitalisation flip, which re-tokenises the
+            # span, and the image control is a font change, which does not. They
+            # differ ~9x on Tier B *before* any map is fitted. Collapse is
+            # mapped-vs-unmapped image control, which is `control_retention`
+            # above; conflating the two produced a false NO VERDICT here.
             wt, wi = null.get("within_text_mean"), null.get("within_image_mean")
-            if block["msg"] < 1.0 and wt and wi:
-                ratio = wi / wt if wt else float("inf")
-                note = ("IMAGE CONTROL COLLAPSED under the map — the low ratio "
-                        "is the denominator, not the gap"
-                        if ratio < 0.25 else
-                        "both halves of the denominator survive")
-                print(f"    {'':<24}   within-text {wt:.4f} / within-image "
-                      f"{wi:.4f} ({ratio:.2f}x) — {note}")
-                if ratio < 0.25:
-                    blocked.append(label)
-                    continue
+            if wt and wi:
+                print(f"    {'':<24}   denominator halves: within-text {wt:.4f}"
+                      f" / within-image {wi:.4f} ({wt / wi:.1f}x)")
             if null.get("denominator_warning"):
-                print(f"    {'':<24} ! {null['denominator_warning']}")
+                print(f"    {'':<24} ~ {null['denominator_warning']}")
 
             ci = block.get("ci")
             upper = ci[1] if ci else block["msg"]
