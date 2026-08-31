@@ -69,10 +69,12 @@ def load_model(path: str, attn: str, device: str):
 
 def build_corpus(tier: str, n: int, fonts: FontSet, cfg: RenderConfig,
                  seed: int, held_out_fonts: bool,
-                 control: views.ControlKind = views.ControlKind.SURFACE):
+                 control: views.ControlKind = views.ControlKind.SURFACE,
+                 balanced: bool = True):
     if tier == "B":
         items = tier_b.build(n, fonts, cfg, seed=seed,
-                             held_out_fonts=held_out_fonts, control=control)
+                             held_out_fonts=held_out_fonts, control=control,
+                             balanced=balanced)
         if control is views.ControlKind.SYNONYM:
             # Keep only items that actually got a synonym. `_control` falls back
             # to a capitalisation variant when the word has none, and a mixed
@@ -439,6 +441,11 @@ def main() -> int:
                     help="Gate 2 evaluation set. Not for Gate 1.")
     ap.add_argument("--out", default="results/phase1")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--max-distinct-spans", action="store_true",
+                    help="draw spans without class balancing, maximising "
+                         "distinct spans. The map-based nulls need distinct "
+                         "content rather than distinct rows, so use this for "
+                         "any run whose linear-map number will be read")
     ap.add_argument("--control", choices=[k.value for k in views.ControlKind],
                     default=views.ControlKind.SURFACE.value,
                     help="the within-modality text control, i.e. the MSG "
@@ -467,8 +474,14 @@ def main() -> int:
         print(f"\n=== Tier {tier} ===")
         items = build_corpus(tier, args.n, fonts, cfg, args.seed,
                              args.held_out_fonts,
-                             views.ControlKind(args.control))
-        print(f"    {len(items)} items, {len({i.span_id for i in items})} unique spans")
+                             views.ControlKind(args.control),
+                             balanced=not args.max_distinct_spans)
+        n_spans = len({i.span_id for i in items})
+        print(f"    {len(items)} items, {n_spans} unique spans")
+        if n_spans < 2 * 2048:
+            print(f"    ! {n_spans} distinct spans is below 2x the hidden size: "
+                  "the map-based nulls cannot conclude either way "
+                  "(--max-distinct-spans, and raise --n)")
         res = measure_tier(model, processor, items, args.batch, args.layers,
                            args.device, args.functional_n, args.seed)
         r = msg.MSGResult(**{

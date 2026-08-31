@@ -88,8 +88,29 @@ def wilson_lower(hits: int, n: int, z: float = 1.96) -> float:
     return (centre - margin) / denom
 
 
-def make_spans(n: int, n_words: int, rng: random.Random) -> list[tuple[str, str]]:
-    """Return (text, class) pairs, balanced across word classes."""
+def make_spans(n: int, n_words: int, rng: random.Random,
+               pool: str = "gate0") -> list[tuple[str, str]]:
+    """Return (text, class) pairs, balanced across word classes.
+
+    `pool="spans"` draws from the Phase 1 vocabulary instead of this script's
+    own held-out list. That is a *verification* mode, not a selection mode: the
+    frozen render config must never be re-chosen on the words it will be
+    measured on. Use it to answer "is the Phase 1 pool legible at the frozen
+    config?", which matters because that pool averages 9.4 characters against
+    the ~7 this config was frozen on, and Gate 0 established that read-back
+    tracks length.
+    """
+    if pool == "spans":
+        from freeflow.data import vocab
+        picks = vocab.sample(n * n_words, rng, balanced=False)
+        out = []
+        for i in range(n):
+            chunk = picks[i * n_words:(i + 1) * n_words]
+            if not chunk:
+                break
+            out.append((" ".join(w for w, _ in chunk), chunk[0][1]))
+        return out
+
     classes = list(WORD_CLASSES)
     out = []
     for i in range(n):
@@ -217,6 +238,12 @@ def main() -> int:
                          "a minority contributor to MSG, not a second copy of the "
                          "train criterion.")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--pool", choices=["gate0", "spans"], default="gate0",
+                    help="'gate0' uses this script's own held-out words and is "
+                         "the selection mode. 'spans' draws from the Phase 1 "
+                         "vocabulary to verify that pool is legible at the "
+                         "already-frozen config — verification only; never "
+                         "re-choose the config on the words it will measure")
     args = ap.parse_args()
 
     if args.quick:
@@ -229,8 +256,8 @@ def main() -> int:
           f"{len(held_fonts)} held out (reported only)")
 
     rng = random.Random(args.seed)
-    spans_1 = make_spans(args.n, 1, rng)
-    spans_3 = make_spans(args.n, 3, rng)
+    spans_1 = make_spans(args.n, 1, rng, args.pool)
+    spans_3 = make_spans(args.n, 3, rng, args.pool)
 
     from transformers import AutoProcessor
     try:

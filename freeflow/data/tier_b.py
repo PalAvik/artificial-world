@@ -55,6 +55,7 @@ def build(
     control: ControlKind = ControlKind.SURFACE,
     held_out_fonts: bool = False,
     words: Sequence[tuple[str, str]] | None = None,
+    balanced: bool = True,
 ) -> list[SpanItem]:
     """Build `n` Tier B items.
 
@@ -68,7 +69,8 @@ def build(
     from . import vocab
 
     rng = random.Random(seed)
-    picks = list(words) if words is not None else vocab.sample(n, rng)
+    picks = (list(words) if words is not None
+             else vocab.sample(n, rng, balanced=balanced))
     items: list[SpanItem] = []
 
     for i, (word, cls) in enumerate(picks):

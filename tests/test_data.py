@@ -107,13 +107,64 @@ class TestBatchBySuffix:
 # ---------------------------------------------------------------- vocab ---
 
 class TestVocab:
-    def test_length_is_controlled_across_the_three_short_classes(self):
-        """Gate 0 showed read-back tracks length. If the short classes were not
-        length-matched, a class difference in MSG could just be length."""
+    def test_the_matched_sets_share_a_length_distribution_exactly(self):
+        """Gate 0 showed read-back tracks length, so a class difference in MSG
+        could otherwise just be length. These are the sets any word-class claim
+        must rest on, and they are matched histogram-for-histogram, not merely
+        in mean."""
+        from collections import Counter
+        hists = {n: Counter(len(w) for w in ws)
+                 for n, ws in vocab.MATCHED.items()}
+        assert set(hists) == {"function", "concrete", "abstract"}
+        first = hists["function"]
+        for name, h in hists.items():
+            assert h == first, (name, h, first)
+        assert len(vocab.MATCHED["function"]) > 100
+
+    def test_concrete_and_abstract_are_length_matched_at_scale(self):
+        """The larger pair carries the abstractness contrast and is matched to
+        each other; function cannot join them without costing most of their
+        size, which is what MATCHED is for."""
         lens = vocab.length_summary()
-        short = [lens["function"], lens["concrete"], lens["abstract"]]
-        assert max(short) - min(short) < 2.0, lens
-        assert lens["rare_long"] > max(short) + 3.0, lens
+        assert lens["concrete"]["mean"] == lens["abstract"]["mean"]
+        assert lens["concrete"]["sd"] == lens["abstract"]["sd"]
+        assert lens["concrete"]["n"] == lens["abstract"]["n"] > 1000
+
+    def test_rare_long_is_the_long_class(self):
+        lens = vocab.length_summary()
+        assert lens["rare_long"]["mean"] > lens["concrete"]["mean"] + 3.0
+
+    def test_the_span_pool_can_support_the_map_nulls(self):
+        """A [D, D] map memorises when D >= distinct spans. At D = 2048 the pool
+        must clear ~4096 for the linear-map null to conclude anything; this is
+        the corpus half of the 2026-08-31 failure."""
+        assert len(vocab.SPANS) >= 2 * 2048
+        assert len(set(vocab.SPANS)) == len(vocab.SPANS)
+
+    def test_unbalanced_sampling_wastes_no_distinct_spans(self):
+        picks = vocab.sample(8000, random.Random(0), balanced=False)
+        assert len({w for w, _ in picks}) == 8000
+
+    def test_words_carry_their_class_and_bulk_claims_nothing(self):
+        assert vocab.class_of(vocab.CLASSES["function"][0]) == "function"
+        assert vocab.class_of("thisisnotaword") == "bulk"
+
+    def test_the_pool_is_not_an_alphabetical_slice(self):
+        """The labelled classes exceed the pool size, so something is dropped.
+        Truncating a sorted list would keep a-m and cut the tail off every
+        class: a spelling bias and an uneven cut across classes at once."""
+        from collections import Counter
+        initials = Counter(w[0] for w in vocab.SPANS)
+        assert len(initials) >= 20                      # not a-m only
+        shares = Counter(vocab.class_of(w) for w in vocab.SPANS)
+        for name, words in vocab.CLASSES.items():
+            if len(words) >= 2000:                      # the large classes
+                assert shares[name] >= 1500, shares
+
+    def test_the_gate0_words_are_held_out(self):
+        """Gate 0 chose the render config on those words; reusing them would
+        report a number partly selected for."""
+        assert "quixotic" not in vocab.SPANS and "pulchritude" not in vocab.SPANS
 
     def test_sampling_is_balanced_across_classes(self):
         from collections import Counter
