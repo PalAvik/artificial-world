@@ -75,6 +75,18 @@ needs a CI upper bound below 1.25 on every tier, against Tier B's 3.096.
 - [x] **H3 falsified for Tier B** — a constant offset explains 1.0% of the gap.
 - [x] Phase 1 baselines and run log filled in `results/RESULTS.md`.
 
+## Paper
+
+- [~] **Draft in `paper/`** — ICLR 2026 format, abstract + introduction + method,
+      compiles to 5 pages. Written to be true whether or not the gap survives a
+      linear map, since it describes an instrument rather than a result.
+- [ ] **Related-work sweep.** Blocks the citations, and is the work most likely
+      to change the introduction's claims — particularly the assertion that
+      existing modality-gap work reports unnormalised distances.
+- [ ] **Citations.** `paper/references.bib` is empty on purpose and lists the
+      claims currently standing unsupported. No invented references.
+- [ ] **Results and conclusions**, once the linear-map run lands.
+
 ## Ongoing
 
 - [ ] **`results/RESULTS.md` gets a row per run, before the next run starts.**

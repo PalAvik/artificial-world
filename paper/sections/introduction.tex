@@ -1,0 +1,104 @@
+\section{Introduction}
+
+Vision-language models are trained until a picture and a sentence can be
+reasoned about together, and are then described as having a shared
+representation space. It is not obvious what that claim asserts. A weak reading
+is that the two streams are mutually legible: the model can answer questions
+about an image in text. That reading is clearly true and equally clearly
+uninteresting, because a captioning pipeline with a frozen encoder satisfies it.
+A strong reading is that the model's internal state does not depend on which
+modality delivered a piece of content --- that content is represented, and the
+channel it arrived through is not. This paper is about measuring the distance
+between those two readings.
+
+\paragraph{Equivalence is ill-posed as usually stated.}
+The natural experiment --- express the same thing in text and in pixels, compare
+the representations --- does not survive contact with the details. A noun phrase
+and the image region it refers to are not the same object: the phrase
+\emph{a dog} denotes a class, the crop denotes a particular animal in a
+particular pose. The two occupy different numbers of tokens, so there is no
+positional correspondence to compare along. And any residual distance mixes
+together at least three things: divergence in how the model encodes the two
+channels, genuine information asymmetry between a word and a picture, and
+whatever variation the model would show between two \emph{text} expressions of
+the same content. A number that confounds these is not evidence about
+representation. Much of the reported ``modality gap'' literature measures raw
+distances of this kind.
+
+We take the position that the confounds must be designed out rather than
+argued away, and that doing so is the contribution. Three constructions do the
+work.
+
+\paragraph{Assert equivalence at the merge position, not on the span.}
+Two views of an item share a prefix and a suffix verbatim and differ only in a
+substituted span. Because the span occupies a different number of tokens in each
+view, we make no claim about the span's own representation. We instead compare
+the hidden state at the \emph{first token after} the span, located as
+$\text{len}(\text{sequence}) - \text{len}(\text{suffix tokens})$. If the model
+has reconciled the two views, it has done so by that point; if it has not, the
+divergence is still present there, since everything downstream is conditioned on
+it. This makes the comparison well-defined without requiring the two views to
+have the same length, and it is model-agnostic: it never needs to know how the
+processor expanded the image.
+
+\paragraph{Normalise by a within-modality control.}
+An absolute distance is uninterpretable because we have no scale for it. We
+therefore measure, on the same items, how far apart two \emph{same-modality}
+expressions of the same content sit --- a synonym in the text view, a re-render
+in the image view --- and report the ratio. The resulting Modality Substitution
+Gap answers a question with a meaningful zero point: \emph{does crossing
+modalities cost more than re-expressing content within one?} A value near $1$
+says it does not. This is the quantity a training objective could sensibly
+target, and the denominator is what makes it a claim rather than a number.
+
+\paragraph{Make the substitution exactly content-preserving.}
+Referential grounding is an unreliable probe precisely because the phrase and
+the region genuinely differ in content, so a nonzero gap is expected under any
+hypothesis. Our centrepiece instead substitutes a word with \emph{an image of
+that word}, rendered as glyphs. The content is then identical by construction ---
+the same lexical item, delivered through the vision encoder --- and the
+substitution has no information asymmetry left to explain a gap. It also removes
+a limitation that confines grounding-based probes to depictable nouns: an
+abstract word has no region to point at, but it renders as readily as a concrete
+one, so the same instrument covers function words, abstract nouns, and rare
+words. We complement this with a referential tier (as a control, not a headline)
+and a relational tier.
+
+\paragraph{The controls are the difficult part.}
+An instrument that reports a confident number about an unreadable stimulus is
+worse than no instrument. Two controls turn out to be load-bearing, and neither
+is standard practice.
+
+\emph{A span-free floor.} If a comprehension probe is used to establish that the
+model recovers the substituted content, one must first establish that the probe
+depends on that content at all. We score the same forced choice with the span
+blanked in both modalities. Chance is the wrong reference here --- distractors
+drawn from the same class in a constraining context are not indistinguishable
+without the span --- and in our own development this control overturned a
+diagnosis we had already committed to.
+
+\emph{A hierarchy of nulls.} A gap in representation is not automatically a gap
+in information. If the two modalities' states differ by a constant offset, a
+rotation, or any invertible linear map, then no information is lost and any
+downstream linear readout can undo the difference; indeed the projector in a
+standard VLM \emph{is} such a map. We therefore report $\msg$ after removing, in
+turn, a per-modality translation, an orthogonal map, and an arbitrary linear map,
+each fitted out-of-fold. The level at which a gap disappears is the result. We
+report this hierarchy because it is the analysis most likely to deflate our own
+headline number, and because a fitted map with more parameters than fitting data
+fails for reasons of sample size in a way that mimics an irreducible gap.
+
+\paragraph{Contributions.}
+\begin{enumerate}
+    \item A well-posed formulation of cross-modal token substitutability: the
+    merge position (\S\ref{sec:merge}) and the normalised Modality Substitution
+    Gap (\S\ref{sec:msg}).
+    \item Orthographic substitution (\S\ref{sec:tiers}), a content-preserving
+    cross-modal probe that extends to words with no visual referent, together
+    with referential and relational tiers.
+    \item The validity apparatus: a span-free floor for comprehension probes,
+    and an out-of-fold null hierarchy separating a gap in information from a gap
+    in coordinates (\S\ref{sec:validity}).
+    \item A measurement of all of the above on a 2B-parameter VLM, with
+    pre-registered decision thresholds fixed before the numbers existed.
+\end{enumerate}
