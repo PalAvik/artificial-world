@@ -83,8 +83,14 @@ def main() -> int:
         print(f"    {'raw MSG':<24} {_fmt(raw)}")
 
         survives = None
+        blocked: list[str] = []
         for key, label in NULLS:
-            block = (res.get(key) or {}).get("overall")
+            # `null` is the whole per-null block; `block` is only its headline
+            # numbers. An earlier version read `fit` and the denominator means
+            # off `block`, where they do not live, so both guards silently
+            # never fired and a clean-looking report was no evidence at all.
+            null = res.get(key) or {}
+            block = null.get("overall")
             if not block:
                 print(f"    {label:<24} not computed — re-run phase1_measure.py")
                 continue
@@ -94,39 +100,53 @@ def main() -> int:
                 print(f"   ({share:.0%} of the gap)")
             else:
                 print()
-            fit = block.get("fit") or {}
-            warn = fit.get("underdetermined")
+
+            fit = null.get("fit") or {}
+            if fit:
+                # Positive evidence, printed every time. Absence of a warning is
+                # not evidence that a check ran.
+                held = (f"{fit.get('n_groups')} distinct spans"
+                        if fit.get("n_groups") else
+                        f"{fit.get('train_n')} rows (NOT grouped)")
+                print(f"    {'':<24}   fit: {fit.get('kind')}, "
+                      f"{fit.get('folds')} folds, held out by {held}, "
+                      f"{fit.get('rows_per_dim', 0):.1f} rows/dim, "
+                      f"ridge {fit.get('ridge')}")
+
+            warn = fit.get("underdetermined") if fit else None
             if fit and not fit.get("n_groups"):
                 warn = warn or ("folds split rows rather than content — a map "
                                 "fitted this way memorises repeated spans")
             if warn:
                 print(f"    {'':<24} ! {warn}")
-                # An under-determined fit cannot support either verdict, so it
-                # must not be allowed to produce one.
+                blocked.append(label)
                 continue
-            # MSG below 1 says the mapped cross-modal distance is smaller
-            # than the within-modality controls. That can be real -- a fitted
-            # map optimises for proximity where a paraphrase does not -- but it
-            # is also what a map that collapses the image side would produce,
-            # since only the image half of the denominator passes through the
-            # map. Print the split so the two are distinguishable.
-            wt = block.get("within_text_mean")
-            wi = block.get("within_image_mean")
+
+            # MSG below 1 says the mapped cross-modal distance is smaller than
+            # the within-modality controls. That can be real -- a fitted map
+            # optimises for proximity where a paraphrase does not -- but it is
+            # also what a map that collapsed the image side would produce, since
+            # only the image half of the denominator passes through the map.
+            wt, wi = null.get("within_text_mean"), null.get("within_image_mean")
             if block["msg"] < 1.0 and wt and wi:
                 ratio = wi / wt if wt else float("inf")
-                note = ("image control collapsed under the map" if ratio < 0.25
-                        else "both halves of the denominator survive")
+                note = ("IMAGE CONTROL COLLAPSED under the map — the low ratio "
+                        "is the denominator, not the gap"
+                        if ratio < 0.25 else
+                        "both halves of the denominator survive")
                 print(f"    {'':<24}   within-text {wt:.4f} / within-image "
                       f"{wi:.4f} ({ratio:.2f}x) — {note}")
+                if ratio < 0.25:
+                    blocked.append(label)
+                    continue
+            if null.get("denominator_warning"):
+                print(f"    {'':<24} ! {null['denominator_warning']}")
+
             ci = block.get("ci")
             upper = ci[1] if ci else block["msg"]
             if upper < DROP_CI_UPPER and survives is None:
                 survives = label
 
-        blocked = [lbl for key, lbl in NULLS
-                   if ((res.get(key) or {}).get("overall") or {})
-                   .get("fit", {}) and
-                   (res[key]["overall"].get("fit") or {}).get("underdetermined")]
         print()
         if blocked and not survives:
             print(f"    -> NO VERDICT. {', '.join(blocked)} could not be fitted "
