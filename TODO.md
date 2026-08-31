@@ -48,6 +48,28 @@ needs a CI upper bound below 1.25 on every tier, against Tier B's 3.096.
 - [ ] **Make the Gate 1 decision on 2026-09-16** and record it in
       `results/DECISIONS.md` on the day, per the drop rule pre-registered there.
 
+## Tier P — pictorial substitution (new)
+
+A word replaced by a photograph of the thing it denotes, rather than by a
+picture of the word. Closer to the question the project started from, and
+strictly weaker as an instrument on three axes.
+
+- [x] `freeflow/data/tier_p.py`, wired as `--tiers P --images-root <dir>`
+      (ImageFolder layout, >=2 photographs per category).
+- [ ] **Point it at data.** Needs a category-rich source. The image control is a
+      *different photograph of the same category*, which is what makes the
+      denominator absorb instance variation.
+- [!] **Its map nulls are untestable on any standard dataset.** A Tier P span is
+      an object category, and extra photographs add rows rather than
+      constraints. At D=2048 the nulls need ~4096 categories: COCO has 80, Open
+      Images 600, ImageNet-1k 1000. Only ImageNet-21k or iNaturalist would do.
+      `tier_p.coverage()` refuses the verdict rather than printing one.
+- [!] **No word-class comparison is possible here.** There is no photograph of
+      `although` or of `justice`, which is exactly what Tier B exists for.
+- [ ] **Match the token budget before any cross-tier claim.** A glyph strip
+      survives 6 visual tokens; a photograph almost certainly does not, and
+      comparing 6 against 64 would confound the modality gap with the budget.
+
 ## Broken, and known to be
 
 - [!] **Tier C diagrams are unreadable to the model.** Image-view forced choice

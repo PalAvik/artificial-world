@@ -104,6 +104,20 @@ def main() -> int:
                 # An under-determined fit cannot support either verdict, so it
                 # must not be allowed to produce one.
                 continue
+            # MSG below 1 says the mapped cross-modal distance is smaller
+            # than the within-modality controls. That can be real -- a fitted
+            # map optimises for proximity where a paraphrase does not -- but it
+            # is also what a map that collapses the image side would produce,
+            # since only the image half of the denominator passes through the
+            # map. Print the split so the two are distinguishable.
+            wt = block.get("within_text_mean")
+            wi = block.get("within_image_mean")
+            if block["msg"] < 1.0 and wt and wi:
+                ratio = wi / wt if wt else float("inf")
+                note = ("image control collapsed under the map" if ratio < 0.25
+                        else "both halves of the denominator survive")
+                print(f"    {'':<24}   within-text {wt:.4f} / within-image "
+                      f"{wi:.4f} ({ratio:.2f}x) — {note}")
             ci = block.get("ci")
             upper = ci[1] if ci else block["msg"]
             if upper < DROP_CI_UPPER and survives is None:

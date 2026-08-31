@@ -394,3 +394,83 @@ class TestTierAAssembly:
                                             tmp_path / "images")
         assert len(regions) == 1
         assert regions[0].phrase == "a dog"      # cleaned and lowercased
+
+
+class TestTierP:
+    """Pictorial substitution: a word replaced by a photograph of the thing.
+
+    Built on synthetic images — the point is the corpus contract, not the
+    photographs, and the contract is where this tier can go silently wrong.
+    """
+
+    @pytest.fixture
+    def tree(self, tmp_path):
+        from PIL import Image
+        for cat, k in (("dog", 3), ("kettle", 2), ("lonely", 1)):
+            d = tmp_path / cat
+            d.mkdir()
+            for i in range(k):
+                Image.new("RGB", (80 + 7 * i, 60), (20 * i, 90, 160)).save(
+                    d / f"{i}.jpg")
+        return tmp_path
+
+    def test_a_category_with_one_photo_is_dropped(self, tree):
+        """The control must be a *different* photograph. Reusing the same one
+        makes the image half of the denominator exactly zero and sends MSG to
+        infinity — the same failure two-fonts-without-replacement prevents."""
+        from freeflow.data import tier_p
+        cats = tier_p.load_categories(tree)
+        assert set(cats) == {"dog", "kettle"} and "lonely" not in cats
+
+    def test_the_image_control_is_a_different_photograph(self, tree):
+        from freeflow.data import tier_p
+        items = tier_p.build(12, tree, seed=0)
+        for it in items:
+            assert it.meta["primary_image"] != it.meta["control_image"]
+            assert it.span_image is not it.span_image_alt
+
+    def test_the_probe_label_is_the_category_not_the_photograph(self, tree):
+        """Two photographs of a dog share a label, so the probe measures
+        whether the category survives rather than whether one image is
+        memorable."""
+        from freeflow.data import tier_p
+        items = tier_p.build(12, tree, seed=0)
+        assert {it.span_id for it in items} <= {"dog", "kettle"}
+
+    def test_coverage_refuses_the_map_nulls_on_few_categories(self, tree):
+        """A Tier P span is a category, and extra photographs are extra rows,
+        not extra constraints — the distinction that produced MSG 0.006."""
+        from freeflow.data import tier_p
+        items = tier_p.build(40, tree, seed=0)
+        warn = tier_p.coverage(items, dim=2048)
+        assert "categories" in warn and "rows rather than constraints" in warn
+        assert tier_p.coverage(items, dim=1) is None
+
+    def test_rejects_a_tree_whose_categories_are_not_words(self, tmp_path):
+        """ImageFolder trees are often keyed by synset id. A span that is not a
+        word cannot be compared with the other tiers' text views."""
+        from PIL import Image
+        from freeflow.data import tier_p
+        d = tmp_path / "n02084071"
+        d.mkdir()
+        for i in range(2):
+            Image.new("RGB", (64, 64), "white").save(d / f"{i}.jpg")
+        with pytest.raises(ValueError, match="plain lowercase word"):
+            tier_p.build(4, tmp_path, seed=0)
+
+    def test_letterboxes_rather_than_crops(self, tree):
+        """A centre crop can remove the object the word denotes, turning some
+        items into a substitution of the wrong content — which produces a
+        plausible number rather than an error."""
+        from freeflow.data import tier_p
+        items = tier_p.build(4, tree, seed=0)
+        assert items[0].span_image.width == items[0].span_image.height
+
+    def test_the_token_budget_is_recorded_on_every_item(self, tree):
+        """Comparing Tier B at six visual tokens with Tier P at sixty-four
+        would confound the modality gap with the token budget."""
+        from freeflow.data import tier_p
+        cfg = tier_p.PictorialConfig(target_pixels=50176)
+        items = tier_p.build(4, tree, cfg, seed=0)
+        assert all(it.meta["target_pixels"] == 50176 for it in items)
+        assert items[0].span_image.width < tier_p.build(4, tree, seed=0)[0].span_image.width

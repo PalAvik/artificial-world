@@ -44,7 +44,7 @@ from pathlib import Path
 
 import torch
 
-from freeflow.data import tier_b, tier_c, views, vocab
+from freeflow.data import tier_b, tier_c, tier_p, views, vocab
 from freeflow.data.render import FontSet, RenderConfig
 from freeflow.metrics import (aggregate, cycle, functional, geometry, msg,
                               probe, runner)
@@ -70,7 +70,17 @@ def load_model(path: str, attn: str, device: str):
 def build_corpus(tier: str, n: int, fonts: FontSet, cfg: RenderConfig,
                  seed: int, held_out_fonts: bool,
                  control: views.ControlKind = views.ControlKind.SURFACE,
-                 balanced: bool = True):
+                 balanced: bool = True, images_root: str | None = None):
+    if tier == "P":
+        if not images_root:
+            raise SystemExit(
+                "Tier P needs --images-root pointing at an ImageFolder tree "
+                "(<root>/<category>/<image>.jpg). See freeflow/data/tier_p.py")
+        items = tier_p.build(n, images_root, seed=seed, control=control)
+        warn = tier_p.coverage(items)
+        if warn:
+            print(f"    ! {warn}")
+        return items
     if tier == "B":
         items = tier_b.build(n, fonts, cfg, seed=seed,
                              held_out_fonts=held_out_fonts, control=control,
@@ -441,6 +451,10 @@ def main() -> int:
                     help="Gate 2 evaluation set. Not for Gate 1.")
     ap.add_argument("--out", default="results/phase1")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--images-root", default=None,
+                    help="ImageFolder tree for Tier P (pictorial substitution): "
+                         "<root>/<category>/<image>.jpg, at least two images per "
+                         "category so the control is a different photograph")
     ap.add_argument("--max-distinct-spans", action="store_true",
                     help="draw spans without class balancing, maximising "
                          "distinct spans. The map-based nulls need distinct "
@@ -480,7 +494,8 @@ def main() -> int:
             items = build_corpus(tier, args.n, fonts, cfg, args.seed,
                                  args.held_out_fonts,
                                  views.ControlKind(args.control),
-                                 balanced=not args.max_distinct_spans)
+                                 balanced=not args.max_distinct_spans,
+                                 images_root=args.images_root)
             n_spans = len({i.span_id for i in items})
             lens = [len(i.span_text) for i in items]
             print(f"\n=== Tier {tier} ===")
