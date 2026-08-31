@@ -222,21 +222,26 @@ class TestMergePosition:
         with pytest.raises(ValueError, match="share a suffix length"):
             runner.build_view(proc, mixed, "text", "primary", device="cpu")
 
-    def test_a_dirty_suffix_boundary_is_caught(self, stack, corpus):
-        """Guards the one assumption the index trick makes."""
-        _, proc = stack
-        item = corpus[0]
-        bad = views.SpanItem(prefix=item.prefix, span_text=item.span_text,
-                             suffix=item.suffix, span_image=item.span_image,
-                             span_paraphrase="X", span_image_alt=item.span_image_alt,
-                             span_id="x")
-        original = runner._suffix_ids
-        try:
-            runner._suffix_ids = lambda p, s: [999, 999, 999]
-            with pytest.raises(ValueError, match="clean suffix"):
-                runner.build_view(proc, [bad], "text", "primary", device="cpu")
-        finally:
-            runner._suffix_ids = original
+    def test_rows_disagreeing_on_their_final_tokens_are_caught(self):
+        """The real hazard: a token merging across the span/suffix boundary for
+        some items but not others, which shifts those rows' merge positions
+        while every index still looks plausible.
+
+        Checked against the other rows rather than against the suffix tokenised
+        in isolation — a SentencePiece leading space is its own token at
+        sequence start and merges into the next one mid-sequence, so the
+        standalone form legitimately differs. Comparing against it aborted the
+        llava-v1.6 run over one token id at equal length.
+        """
+        inputs = {"input_ids": torch.tensor([[5, 6, 7, 8], [5, 6, 9, 8]]),
+                  "attention_mask": torch.ones(2, 4, dtype=torch.long)}
+        with pytest.raises(ValueError, match="do not share their final"):
+            runner._assert_clean_boundary(inputs, [], k=2, processor=None)
+
+    def test_agreeing_rows_pass_even_with_unusual_ids(self):
+        inputs = {"input_ids": torch.tensor([[1, 2, 7, 8], [3, 4, 7, 8]]),
+                  "attention_mask": torch.ones(2, 4, dtype=torch.long)}
+        runner._assert_clean_boundary(inputs, [], k=2, processor=None)
 
 
 # ------------------------------------------------------------------ capture ---

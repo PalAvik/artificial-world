@@ -84,6 +84,27 @@ def image_placeholder(processor) -> tuple[str, int | None]:
     return text, vocab.get(token)
 
 
+def call_processor(processor, texts: list[str], images: list | None = None,
+                   **kw):
+    """Tokenise, tolerating either image-batching convention.
+
+    Processors disagree about how a batch of images arrives: Qwen takes a flat
+    list, Gemma-3 wants one list per text and rejects the flat form with
+    "inconsistently sized batches". Trying flat first keeps every measurement
+    taken so far byte-identical, and the retry is what lets a second family be
+    measured at all.
+    """
+    kwargs = dict(text=texts, padding=True, return_tensors="pt", **kw)
+    if not images:
+        return processor(**kwargs)
+    try:
+        return processor(**kwargs, images=images)
+    except ValueError as exc:
+        if "inconsistent" not in str(exc).lower():
+            raise
+        return processor(**kwargs, images=[[im] for im in images])
+
+
 def build_view(processor, items: Sequence[SpanItem], modality: str,
                variant: str = "primary", device: str = "cuda:0") -> ViewBatch:
     """Tokenise one view of a batch and locate each item's merge position.
@@ -106,10 +127,15 @@ def build_view(processor, items: Sequence[SpanItem], modality: str,
                 texts.append(f"{it.prefix}{placeholder}{it.suffix}")
                 images.append(img)
 
-        kwargs = dict(text=texts, padding=True, return_tensors="pt")
-        if images:
-            kwargs["images"] = images
-        inputs = processor(**kwargs)
+        inputs = call_processor(processor, texts, images)
+        # The same batch without its suffix, so the suffix's token count comes
+        # from differencing. Tokenising the suffix alone is wrong here for the
+        # reason it is wrong for option strings: a SentencePiece leading space
+        # is its own token at sequence start and merges into the next one
+        # mid-sequence, so standalone ids need not match the ids in context.
+        short = call_processor(processor,
+                               [t[:t.rindex(it.suffix)]
+                                for t, it in zip(texts, items)], images)
 
         # An image view that contains no image tokens is text compared with
         # text: MSG would come out near zero and look like perfect alignment.
@@ -127,14 +153,14 @@ def build_view(processor, items: Sequence[SpanItem], modality: str,
         # merge_index = unpadded length - suffix length. Uses the attention
         # mask rather than the padded shape so it is right for every item.
         lengths = inputs["attention_mask"].sum(dim=1)
-        suffix_lens = [_tok_len(processor, it.suffix) for it in items]
+        suffix_lens = (lengths - short["attention_mask"].sum(dim=1)).tolist()
         if len(set(suffix_lens)) != 1:
             raise ValueError(
                 "items in a batch must share a suffix length; got "
                 f"{sorted(set(suffix_lens))}. Group items by suffix, or the "
                 "JSD slices will not line up across views.")
-        k = suffix_lens[0]
-        if k == 0:
+        k = int(suffix_lens[0])
+        if k <= 0:
             raise ValueError("suffix is empty: there is no merge position after "
                              "the span, and nothing to score the continuation on")
         merge_index = lengths - k
@@ -150,23 +176,32 @@ def build_view(processor, items: Sequence[SpanItem], modality: str,
 
 
 def _assert_clean_boundary(inputs, items, k: int, processor) -> None:
-    """Verify the suffix really is a token-level suffix of the sequence.
+    """Verify every row in the batch ends in the *same* k tokens.
 
-    Tokenisation is not compositional: a merge can straddle the span/suffix
-    boundary, which would silently shift every merge index by one. Cheap to
-    check, and a wrong index would corrupt every number downstream without
-    ever raising.
+    A merge straddling the span/suffix boundary would shift one row's merge
+    index without raising, and corrupt every number downstream. The check is
+    that the rows agree with *each other*, not that they agree with the suffix
+    tokenised in isolation: a SentencePiece leading space is a separate token at
+    sequence start and merges into the following one mid-sequence, so the
+    standalone form legitimately differs while the index stays right. Comparing
+    against it aborted the whole llava-v1.6 run over one token id at equal
+    length.
+
+    Agreement *across views* is the property the merge position actually needs,
+    and `capture` checks that where both views exist.
     """
     ids, mask = inputs["input_ids"], inputs["attention_mask"]
-    expected = _suffix_ids(processor, items[0].suffix)
+    tails = set()
     for row in range(ids.shape[0]):
         n = int(mask[row].sum())
-        tail = ids[row, n - k:n].tolist()
-        if tail != expected:
-            raise ValueError(
-                f"item {row}: suffix does not tokenise as a clean suffix "
-                f"({tail} != {expected}). Start the suffix at an unambiguous "
-                "boundary — a leading space usually suffices.")
+        tails.add(tuple(ids[row, n - k:n].tolist()))
+    if len(tails) > 1:
+        a, b = sorted(tails)[:2]
+        raise ValueError(
+            f"rows in this batch do not share their final {k} tokens: {list(a)} "
+            f"vs {list(b)}. A token merged across the span/suffix boundary for "
+            "some items, so their merge positions differ. Start the suffix at "
+            "an unambiguous boundary — a leading space usually suffices.")
 
 
 def gather_merge_hidden(hidden_states: Sequence[torch.Tensor],
@@ -250,8 +285,11 @@ def capture(model, processor, items: Sequence[SpanItem], batch: int = 32,
     for chunk in batch_by_suffix(items, batch):
         primary_logits = {}
 
+        merge_tokens: dict[str, torch.Tensor] = {}
         for key, (modality, variant) in views.items():
             vb = build_view(processor, chunk, modality, variant, device)
+            merge_tokens[key] = vb.inputs["input_ids"].gather(
+                1, vb.merge_index.view(-1, 1)).squeeze(1).cpu()
             out = model(**vb.inputs, output_hidden_states=True)
             if chosen is None:
                 chosen = default_layers(len(out.hidden_states))
@@ -266,6 +304,23 @@ def capture(model, processor, items: Sequence[SpanItem], batch: int = 32,
                     model, out.hidden_states[-1], vb.merge_index, vb.suffix_len)
             del out
             torch.cuda.empty_cache()
+
+        # The invariant the whole comparison rests on: the merge position must
+        # hold the *same token* in every view. It is the first token of a suffix
+        # that is identical text in all four, but what precedes it differs -- a
+        # written span in one view, image tokens in another -- and a tokeniser
+        # that merges across that boundary would leave the four views pointing
+        # at different tokens while every index still looked plausible.
+        ref = merge_tokens["text"]
+        for key, got in merge_tokens.items():
+            if not torch.equal(got, ref):
+                bad = int((got != ref).nonzero()[0])
+                raise ValueError(
+                    f"view {key!r} has a different token at the merge position "
+                    f"than the text view (item {bad}: {int(got[bad])} vs "
+                    f"{int(ref[bad])}). The views are not aligned and every "
+                    "distance between them would be measured at mismatched "
+                    "positions.")
 
         results["text"].jsd.update(primary_logits["text"], primary_logits["image"])
         del primary_logits
