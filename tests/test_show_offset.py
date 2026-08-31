@@ -112,3 +112,45 @@ def test_a_sound_sub_one_result_is_reported_as_removable(tmp_path):
 def test_a_surviving_gap_is_reported_as_irreducible(tmp_path):
     out = _run(_doc(msg_linear=_null(2.9, 2.85, 2.95, fit=_fit())), tmp_path)
     assert "IRREDUCIBLE" in out
+
+
+def test_validity_is_printed_before_the_geometry(tmp_path):
+    """The geometry is contingent on these, and reading it without them is how
+    an 8000-span run was interpreted while its own validity numbers sat
+    unexamined in the same file."""
+    doc = _doc(msg_linear=_null(0.858, 0.851, 0.865, fit=_fit()))
+    doc["results"]["B"]["readback"] = {"applicable": True, "accuracy": 0.991,
+                                       "cer": 0.0013}
+    doc["results"]["B"]["functional"] = {
+        "text_accuracy": 0.941, "image_accuracy": 1.0,
+        "ablated_accuracy": 0.449, "validity_warning": None,
+        "delta_warning": "image view is at ceiling"}
+    out = _run(doc, tmp_path)
+    assert out.index("read-back") < out.index("raw MSG")
+    assert "0.991" in out and "span-free floor 0.449" in out
+
+
+def test_an_invalid_tier_suppresses_the_geometry(tmp_path):
+    doc = _doc(msg_linear=_null(0.858, 0.851, 0.865, fit=_fit()))
+    doc["results"]["B"]["functional"] = {
+        "text_accuracy": 0.99, "image_accuracy": 0.48, "ablated_accuracy": 0.52,
+        "validity_warning": "the model cannot recover the span from the image"}
+    out = _run(doc, tmp_path)
+    assert "TIER INVALID" in out
+    assert "REMOVABLE" not in out and "IRREDUCIBLE" not in out
+
+
+def test_a_file_with_no_validity_record_says_so(tmp_path):
+    out = _run(_doc(msg_linear=_null(0.858, 0.851, 0.865, fit=_fit())), tmp_path)
+    assert "unvalidated" in out
+
+
+def test_low_readback_is_flagged(tmp_path):
+    doc = _doc(msg_linear=_null(0.858, 0.851, 0.865, fit=_fit()))
+    doc["results"]["B"]["readback"] = {"applicable": True, "accuracy": 0.83,
+                                       "cer": 0.06}
+    doc["results"]["B"]["functional"] = {
+        "text_accuracy": 0.94, "image_accuracy": 0.99, "ablated_accuracy": 0.45,
+        "validity_warning": None, "delta_warning": None}
+    out = _run(doc, tmp_path)
+    assert "below 0.95" in out and "contaminate MSG" in out

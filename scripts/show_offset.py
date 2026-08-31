@@ -80,6 +80,36 @@ def main() -> int:
             continue
         raw = res["msg_raw"]["overall"]
         print(f"=== Tier {tier} ===")
+
+        # Validity first. Every number below is contingent on these, and this
+        # reporter previously printed the geometry without them -- which is how
+        # an 8000-span run was read for its nulls while its read-back and
+        # forced-choice numbers sat unexamined in the same file.
+        rb = res.get("readback") or {}
+        if rb.get("applicable"):
+            ok = rb["accuracy"] >= 0.95
+            print(f"    {'read-back':<24} {rb['accuracy']:.3f} "
+                  f"(CER {rb.get('cer', float('nan')):.4f})"
+                  f"{'' if ok else '   ! below 0.95 — misread spans contaminate MSG'}")
+        elif rb:
+            print(f"    {'read-back':<24} not applicable to tier {tier}")
+        fc = res.get("functional") or {}
+        if fc:
+            floor = fc.get("ablated_accuracy")
+            floor_s = f"{floor:.3f}" if floor is not None else "not measured"
+            print(f"    {'forced choice':<24} text {fc['text_accuracy']:.3f} / "
+                  f"image {fc['image_accuracy']:.3f}, span-free floor {floor_s}")
+            if fc.get("validity_warning"):
+                print(f"    {'':<24} ! {fc['validity_warning']}")
+                print(f"\n    -> TIER INVALID. The geometry below is not "
+                      f"interpretable.\n")
+                continue
+            if fc.get("delta_warning"):
+                print(f"    {'':<24} ~ {fc['delta_warning']}")
+        elif "msg_raw" in res:
+            print(f"    {'validity':<24} ! no read-back or forced-choice record "
+                  "in this file — the geometry below is unvalidated")
+
         print(f"    {'raw MSG':<24} {_fmt(raw)}")
 
         survives = None
