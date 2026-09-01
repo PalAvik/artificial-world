@@ -1,6 +1,26 @@
 # FreeFlow: Cross-Modal Token Substitutability in Small VLMs
 
-**Status:** research plan, v0.1 · **Base model target:** ~2B VLM · **Horizon:** ~10 weeks to a submittable result
+> ## ⚠ Superseded — kept for the design reasoning, not as the current plan
+>
+> Written 2026-08-27 as the project's original design. **Gate 1 cancelled its
+> central programme on 2026-08-31**: the measurement showed that the modality
+> gap at the merge position is largely a *linear re-expression* of the same
+> information, which a vision-to-language projector already implements, so
+> there is nothing for the Phase 2 training objective (§6) to target. Phase 3
+> (§7) never started.
+>
+> **What survives and is still accurate:** §1 (why literal token
+> substitutability is ill-posed), §2 (the three-tier substitution taxonomy, and
+> why glyph rendering solves the abstract-word problem), §5 (the metric suite
+> and the normalisation argument). Those are the paper.
+>
+> **What is superseded:** §6 (the ISO training objective), §7's phase schedule
+> and its Gate 2/3 dates, and every forward-looking claim about training.
+>
+> Current scope is in [`TODO.md`](./TODO.md); the decision and its evidence are
+> in [`results/DECISIONS.md`](./results/DECISIONS.md).
+
+**Status:** superseded 2026-08-31 · **Base model:** Qwen/Qwen3.5-2B and four other Qwen VLMs · **Original horizon:** ~10 weeks
 
 ---
 
