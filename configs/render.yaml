@@ -1,0 +1,14 @@
+_comment: Frozen at Gate 0 by scripts/gate0_sweep.py. Do not hand-edit. Changing any
+  of this invalidates every prior measurement.
+height: 48
+pad: 4
+min_pixels: 1024
+visual_tokens_per_span: 6
+readback_train_1word: 0.9883
+readback_train_1word_ci_lower: 0.9747
+readback_train_3word: 0.9746
+readback_train_3word_ci_lower: 0.957
+readback_heldout_1word: 0.9414
+readback_heldout_3word: 0.9004
+n_per_cell: 512
+seed: 0

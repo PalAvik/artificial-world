@@ -1,0 +1,217 @@
+\section{Method}
+\label{sec:method}
+
+\input{figures/method}
+
+\subsection{Views of an item}
+
+An evaluation item is a context whose span is expressed four ways. Let an item
+consist of a prefix $p$, a span $s$, and a suffix $q$, where $p$ and $q$ are
+shared verbatim across all four views and only the span differs:
+\begin{align}
+    \VT   &= p \,\Vert\, s \,\Vert\, q,          &\quad
+    \VT'  &= p \,\Vert\, \tilde{s} \,\Vert\, q, \\
+    \VI   &= p \,\Vert\, \mathcal{R}(s) \,\Vert\, q, &\quad
+    \VI'  &= p \,\Vert\, \mathcal{R}'(s) \,\Vert\, q,
+\end{align}
+where $\mathcal{R}$ renders the span into the visual channel and $\tilde{s}$ is
+a same-modality re-expression of the same content. The primed views are the
+\emph{within-modality controls}: they hold content fixed and vary only surface
+form, and they exist to set the scale against which the cross-modal distance is
+read.
+
+The suffix must be non-empty. It is where the comparison is made, and an empty
+suffix would leave no position at which the two views can be required to agree.
+
+\subsection{The merge position}
+\label{sec:merge}
+
+$\VT$ and $\VI$ have different lengths: in our configuration a one-word span
+costs one to two text tokens and six visual tokens. There is therefore no
+token-level correspondence along the span, and we assert nothing about it.
+Instead we compare the hidden state at the first token of the shared suffix,
+\begin{equation}
+    m = \text{len}(\text{sequence}) - \text{len}(\text{suffix tokens}),
+    \label{eq:merge}
+\end{equation}
+computed per item from the attention mask so that it is correct under padding.
+Two properties make this the right choice. It is model-agnostic --- it never
+requires knowing how the processor expanded the image --- and it is the earliest
+position at which the two views are required to be comparable, since from there
+on they are conditioned on identical text.
+
+Equation~\ref{eq:merge} assumes the suffix tokenises identically in both views.
+Tokenisation is not compositional, so a merge across the span/suffix boundary
+would silently shift every index by one and corrupt every downstream number
+without raising. We therefore verify at run time that the suffix is a token-level
+suffix of each sequence, and abort otherwise. The same non-compositionality
+governs how we count option lengths in \S\ref{sec:validity}: token counts are
+always obtained by differencing sequences encoded through the processor, never
+by encoding a fragment in isolation.
+
+Forward passes use right padding so that absolute indices computed on the
+unpadded sequence remain valid; batched generation, used only for the
+transcription check, requires left padding instead.
+
+\subsection{The Modality Substitution Gap}
+\label{sec:msg}
+
+Let $h(\cdot)$ denote the hidden state at the merge position at a chosen layer,
+and $d(\cdot,\cdot)$ the cosine distance. The normalised gap for an item is
+\begin{equation}
+    \msg = \frac{d\big(h(\VT),\, h(\VI)\big)}
+                {\tfrac{1}{2}\Big[d\big(h(\VT),\, h(\VT')\big)
+                 + d\big(h(\VI),\, h(\VI')\big)\Big]}.
+    \label{eq:msg}
+\end{equation}
+The denominator is what makes this interpretable. It asks how far apart two
+expressions of the \emph{same} content sit within a single modality, on the same
+items and at the same position, and the ratio then has a meaningful reference
+value: $\msg \approx 1$ means crossing modalities costs no more than
+re-expressing content within one, $\msg \gg 1$ means the channel dominates the
+content, and $\msg < 1$ would mean surface variation within a modality is the
+larger effect.
+
+We report the ratio of means, $\overline{d_{\text{cross}}}/\overline{d_{\text{within}}}$,
+as the headline, with the mean of per-item ratios alongside. The two answer
+different questions and can diverge sharply when the denominator is
+small for some items; per-item ratios are heavy-tailed for exactly that reason,
+which is why the ratio of means is primary. Confidence intervals are obtained by
+bootstrap over items. We additionally report the two halves of the denominator
+separately, since a denominator dominated by one modality's control is really
+being set by that control alone.
+
+\paragraph{The denominator is a design decision, not a detail.}
+A within-modality control that is too weak inflates $\msg$. A capitalisation
+variant preserves content but perturbs the representation very little, so a gap
+measured against it is a statement about a small reference quantity; a synonym is
+a genuinely different expression of the same content and is the stronger
+comparison. We report which control was used with every number, because
+``$\msg = 3$'' means different things against the two.
+
+\subsection{Three substitution tiers}
+\label{sec:tiers}
+
+\paragraph{Tier A: referential.} A noun phrase replaced by a crop of the region
+it refers to, using existing phrase-to-region annotations. The bridge is
+grounding. This tier is a \emph{control}, not the contribution: the crop and the
+phrase genuinely differ in content, so any gap here is an upper bound mixing
+representational divergence with information asymmetry. The image control is a
+different region annotated with the same phrase.
+
+\paragraph{Tier B: orthographic.} A word replaced by a rendering of that word as
+glyphs. This is the centrepiece, for two reasons. The substitution is exactly
+content-preserving --- the same lexical item through a different encoder --- so
+information asymmetry cannot explain a gap. And it lifts the restriction to
+depictable content: abstract words, function words, and rare words render as
+readily as concrete nouns, so the tier supports a word-class comparison that
+grounding-based probes cannot. The image control is the same word in a different
+typeface, which is the exact analogue of a synonym in the text view: same
+content, different surface.
+
+Tier B depends on the model being able to read the rendering, so this is
+established before anything else is measured, by a transcription check on
+held-out typefaces; the rendering configuration is frozen at the cheapest
+setting that passes, and every subsequent number is reported both
+unconditionally and conditioned on spans the model transcribes correctly. This
+conditioning is what keeps a residual transcription error rate from acting as a
+confound, and it matters for the word-class comparison specifically: if
+transcription accuracy varies with word length or class, an unconditioned
+comparison would report legibility as though it were representational structure.
+
+\paragraph{Tier C: relational.} A described relation replaced by a diagram of
+it, probing whether relational structure survives substitution. This tier is the
+most demanding on stimulus design, and \S\ref{sec:validity} explains why it
+cannot be trusted without an explicit comprehension check.
+
+\subsection{Validity: what the gap is not}
+\label{sec:validity}
+
+$\msg$ is defined whether or not the substituted span means anything to the
+model, and will report a large, tight-CI gap for a stimulus the model cannot
+read. Two families of control are therefore not optional.
+
+\paragraph{Does the image view carry the content?}
+We score a two-alternative forced choice --- the true span against a distractor
+drawn from the same class --- under each view, by likelihood rather than by
+parsing generated text, which avoids refusals, formatting drift, and any
+prompt-following confound between modalities. Options are scored as pointwise
+mutual information against a null context,
+\begin{equation}
+    \text{score}(o) = \log P(o \mid \text{context}) - \log P(o \mid \text{question alone}),
+\end{equation}
+because raw likelihood lets an option's unconditional frequency compete with the
+in-context evidence: a rare true span can lose to a common distractor even with
+the answer written out. The null term is computed once per option string and
+shared across views, so the calibration cannot differ by modality.
+
+Accuracy on the image view is the validity check, but it must be read against
+the right reference. Chance is not it: distractors from the same class in a
+constraining context are partly predictable without the span. We therefore score
+a third, \emph{span-free} view with the span blanked in both modalities, and
+require the image view to clear that floor. A choice decidable from the context
+alone is reported as such, and the tier's $\msg$ is marked uninterpretable.
+
+A saturated view is likewise uninformative in the other direction: an image view
+at ceiling has no headroom, so a text-image accuracy difference measured against
+it bounds the functional gap near zero rather than measuring it. We report that
+condition explicitly rather than quoting the difference.
+
+\paragraph{Is the gap a difference in information, or in coordinates?}
+A representational difference that any linear readout could undo costs the model
+nothing. This matters concretely, because the projector bridging a VLM's vision
+encoder to its language model is itself a linear map: a gap that a fitted linear
+map removes is one the standard architecture already closes. We therefore
+recompute $\msg$ after removing, in turn,
+\begin{enumerate}
+    \item a constant per-modality translation (the offset-free gap),
+    \item an orthogonal map, fitted by Procrustes,
+    \item an arbitrary linear map, fitted by ridge regression,
+\end{enumerate}
+each strictly more general than the last. The level at which the gap disappears
+is the finding.
+
+Three details decide whether this analysis means anything. \emph{The maps are
+fitted out-of-fold}: fitted and scored on the same items, a $[D,D]$ map has
+enough freedom to drive any distance to zero. \emph{The within-modality control
+is carried through the same fold's map} as the cross-modal pair, since mapping
+the numerator while leaving the denominator alone would manufacture a collapse
+in the ratio. And \emph{the fit must not be under-determined}: a map with $D^2$
+parameters fitted from fewer than $D$ rows generalises poorly whatever the truth
+is, and that failure is indistinguishable from an irreducible gap. We report
+rows-per-dimension with every fitted result and decline to issue a verdict below
+a fixed threshold. The ridge penalty is selected from a grid by out-of-fold
+distance --- mildly optimistic for the map, deliberately, since the claim under
+test is that the gap \emph{survives} it.
+
+\paragraph{Informativeness.}
+Invariance is trivially maximised by discarding information, so a low $\msg$ is
+only meaningful alongside evidence that the representation still distinguishes
+spans. We train a linear probe to recover span identity from the merge-position
+state and report probe accuracy alongside $\msg$ throughout, treating the pair as
+a frontier rather than either as a scalar objective.
+
+\subsection{Complementary measurements}
+
+Beyond the merge-position geometry we report: the Jensen--Shannon divergence
+between the two views' next-token distributions over the shared suffix, which
+asks whether the residual geometric difference is behaviourally visible; linear
+CKA between the two views' representations, which asks whether the two clouds
+have the same \emph{shape} independent of orientation and is therefore the
+natural companion to the null hierarchy; per-layer distances, which locate where
+in the stack the gap lives; and a text$\rightarrow$image$\rightarrow$text
+transcription cycle, which bounds how much of the span survives a round trip
+through the visual channel.
+
+\subsection{Experimental protocol}
+
+All gated measurements are taken on a single GPU architecture with a fixed
+software stack, and every recorded run carries its architecture, framework
+version, and attention backend, since a comparison split across architectures is
+not a comparison. Decision thresholds and their consequences are fixed in a
+version-controlled document before the corresponding numbers exist, and each
+decision is recorded on its date with the numbers available on that date. We
+state this as method rather than as good practice because two of our own
+intermediate conclusions were reversed by controls added afterwards, and the
+record of what was decided when is the only thing that distinguishes a
+pre-registered threshold from a post-hoc one.

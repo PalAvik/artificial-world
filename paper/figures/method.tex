@@ -1,0 +1,120 @@
+% The method figure. Panel (a) is why the comparison cannot be made on the span;
+% panel (b) is what the ratio is made of.
+%
+% Layout note: every row is built right-to-left from the merge line, so the rows
+% are contiguous and the shared suffix starts at the same x in all four. An
+% earlier version left-aligned the spans, which opened a gap before the suffix
+% and read as missing tokens -- the opposite of the panel's point, which is that
+% the views differ in span *width* and agree from the merge position onward.
+%
+% The two image strips are the actual Tier B stimulus at the frozen render
+% geometry, written by scripts/make_figure_assets.py.
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[
+    font=\small,
+    tok/.style={draw=black!45, rounded corners=1pt, minimum height=4.4mm,
+                inner xsep=2.5pt, fill=black!4, font=\scriptsize\ttfamily},
+    span/.style={tok, fill=orange!16, draw=orange!65},
+    vtok/.style={draw=blue!55, fill=blue!14, rounded corners=0.4pt,
+                 minimum height=1.5mm, minimum width=2.55mm, inner sep=0pt},
+    lbl/.style={font=\footnotesize, anchor=east},
+    >=stealth,
+]
+\def\imgw{1.7cm}
+
+% ---------------------------------------------------------------- panel (a) ---
+\node[font=\footnotesize\bfseries, anchor=west] at (-3.75, 1.02) {(a)};
+
+% --- text views: prefix and span hang leftward from the merge line at x = 0 ---
+\foreach \y/\name/\word in {0/T/wisdom, -0.78/Tc/insight} {
+  \node[span, anchor=east] (s\name) at (0, \y) {\word};
+  \node[tok, anchor=east] (p\name) at ($(s\name.west)+(-1pt,0)$) {She\ wrote};
+}
+\node[lbl] at ($(pT.west)+(-4pt,0)$) {$V_\mathrm{T}$};
+\node[lbl] at ($(pTc.west)+(-4pt,0)$) {$V_\mathrm{T}'$};
+
+% --- image views: the rendered strip, with the six visual tokens beneath it ---
+\foreach \y/\name/\file in {-1.85/I/span_primary, -2.95/Ic/span_control} {
+  \node[anchor=east, inner sep=0pt, draw=blue!45, line width=0.3pt]
+       (i\name) at (0, \y+0.12) {\includegraphics[width=\imgw]{figures/\file.png}};
+  \foreach \i in {0,...,5} {
+    \node[vtok, anchor=east] at ($(i\name.south east)+(-\i*2.65mm, -1.6mm)$) {};
+  }
+  \node[tok, anchor=east] (p\name) at ($(i\name.west)+(-1pt,0)$) {She\ wrote};
+}
+\node[lbl] at ($(pI.west)+(-4pt,0)$) {$V_\mathrm{I}$};
+\node[lbl] at ($(pIc.west)+(-4pt,0)$) {$V_\mathrm{I}'$};
+
+% --- the shared, terminal suffix: identical and identically placed ----------
+\foreach \y in {0, -0.78, -1.85, -2.95} {
+  \node[tok, anchor=west, fill=black!9] at (2pt, \y) {on\ the\ page.};
+}
+
+% --- the merge position ----------------------------------------------------
+\draw[dashed, red!70, thick] (0, 0.62) -- (0, -3.34);
+\node[font=\footnotesize, red!75, anchor=south] at (0.92, 0.66) {merge position $m$};
+
+\draw[decorate, decoration={brace, amplitude=3pt, mirror}, black!55]
+     (-1.75, -3.40) -- (-0.03, -3.40);
+\node[font=\scriptsize, anchor=north, text width=2.4cm, align=center]
+     at (-1.35, -3.58) {substituted span\\[-2pt]\emph{1--2 vs 6 tokens,\\[-2pt]never compared}};
+\draw[decorate, decoration={brace, amplitude=3pt, mirror}, black!55]
+     (0.03, -3.40) -- (1.72, -3.40);
+\node[font=\scriptsize, anchor=north, text width=2.4cm, align=center]
+     at (1.35, -3.58) {shared suffix\\[-2pt]\emph{verbatim; where\\[-2pt]they must agree}};
+
+% ---------------------------------------------------------------- panel (b) ---
+\begin{scope}[xshift=5.95cm, yshift=-0.95cm]
+\node[font=\footnotesize\bfseries, anchor=west] at (-2.05, 1.77) {(b)};
+
+\coordinate (hT)  at (-1.00,  0.80);
+\coordinate (hTc) at (-1.40, -0.42);
+\coordinate (hI)  at ( 1.10,  0.66);
+\coordinate (hIc) at ( 1.50, -0.56);
+
+\draw[thick, dash pattern=on 2pt off 1.6pt, black!60] (hT) -- (hTc)
+      node[midway, left, font=\scriptsize, inner sep=1.5pt] {$d_{\mathrm{T}}$};
+\draw[thick, dash pattern=on 2pt off 1.6pt, black!60] (hI) -- (hIc)
+      node[midway, right, font=\scriptsize, inner sep=1.5pt] {$d_{\mathrm{I}}$};
+\draw[line width=1.1pt, red!75] (hT) -- (hI)
+      node[midway, above, font=\scriptsize, inner sep=2pt] {$d_{\mathrm{cross}}$};
+
+\fill[orange!85] (hT)  circle (2.1pt);
+\fill[orange!45] (hTc) circle (2.1pt);
+\fill[blue!75]   (hI)  circle (2.1pt);
+\fill[blue!40]   (hIc) circle (2.1pt);
+
+\node[font=\scriptsize, anchor=east] at ($(hT)+(-0.10,0.02)$)  {$h(V_\mathrm{T})$};
+\node[font=\scriptsize, anchor=east] at ($(hTc)+(-0.10,0)$)    {$h(V_\mathrm{T}')$};
+\node[font=\scriptsize, anchor=west] at ($(hI)+(0.10,0.02)$)   {$h(V_\mathrm{I})$};
+\node[font=\scriptsize, anchor=west] at ($(hIc)+(0.10,0)$)     {$h(V_\mathrm{I}')$};
+
+\node[font=\footnotesize, anchor=north] at (0.15, -1.05)
+     {$\displaystyle \mathrm{MSG}=
+       \frac{d_{\mathrm{cross}}}{\tfrac{1}{2}(d_{\mathrm{T}}+d_{\mathrm{I}})}$};
+\node[font=\scriptsize, anchor=north, text width=4.4cm, align=center]
+     at (0.15, -2.00)
+     {states at $m$: solid is the numerator,\\[-2pt]dashed the denominator};
+\end{scope}
+
+\end{tikzpicture}
+\caption{\textbf{Cross-modal token substitutability, made well-posed.}
+\textbf{(a)} Four views of one item share a prefix and a terminal suffix
+verbatim and differ only in a substituted span: the span written out
+($V_\mathrm{T}$), a same-modality re-expression of it ($V_\mathrm{T}'$), the
+span rendered as glyphs ($V_\mathrm{I}$), and the same word in a second
+typeface ($V_\mathrm{I}'$). The span occupies one to two text tokens but six
+visual tokens (small boxes), so no positional correspondence exists along it
+and we assert nothing about it. Equivalence is instead asserted at the
+\emph{merge position} $m$, the first token of the shared suffix, located as
+$\mathrm{len}(\text{sequence})-\mathrm{len}(\text{suffix tokens})$ and hence
+model-agnostic --- it never needs to know how the processor expanded the image.
+The strips are the actual stimulus at the frozen render geometry.
+\textbf{(b)} The Modality Substitution Gap normalises the cross-modal distance
+at $m$ by the within-modality control distances measured on the same items.
+The denominator is what gives the ratio a reference value: it asks whether
+crossing modalities costs more than re-expressing the same content inside one.
+$\mathrm{MSG}\approx1$ means it does not.}
+\label{fig:method}
+\end{figure}

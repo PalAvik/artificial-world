@@ -1,0 +1,28 @@
+\begin{abstract}
+A vision-language model that has genuinely unified its modalities should treat a
+piece of content as the same content whether it arrives as text or as pixels.
+We make that intuition measurable. Our central obstacle is that cross-modal
+equivalence is ill-posed as usually stated: a phrase and an image region are not
+the same object, occupy different numbers of tokens, and carry different
+information, so any raw distance between their representations confounds
+representational divergence with genuine content mismatch. We resolve this with
+three constructions. First, equivalence is asserted not on the substituted span
+but at the \emph{merge position} --- the first token of a shared, verbatim-identical
+suffix --- where the two views must have reconciled whatever they encoded.
+Second, we normalise the cross-modal distance by a \emph{within-modality} control
+distance measured on the same items, yielding the Modality Substitution Gap
+($\msg$), a scale-free ratio whose value of $1$ means crossing modalities costs
+no more than re-expressing content within one. Third, we introduce
+\emph{orthographic substitution} --- replacing a word with a picture of that word ---
+which makes the substitution exactly content-preserving and so removes the
+information asymmetry that makes referential grounding an unreliable probe.
+Around these we build the controls the measurement needs but that prior modality-gap
+work does not report: a span-free floor establishing that a comprehension probe
+depends on the substituted content at all, and a hierarchy of nulls
+(translation, rotation, arbitrary linear map, each fitted out-of-fold) that
+distinguishes a gap in \emph{information} from a gap in \emph{coordinates}. Applied to a
+2B-parameter VLM, the instrument produces a large and reproducible gap under
+orthographic substitution, and the accompanying controls determine whether that
+gap reflects anything a downstream computation could not undo.
+\emph{(Numerical results are pending the final run; Section~5 is a placeholder.)}
+\end{abstract}

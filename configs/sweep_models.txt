@@ -1,0 +1,22 @@
+# Models for scripts/model_sweep.py, one HF id per line.
+#
+# VERIFY THESE BEFORE THE SWEEP: this list was written without network access to
+# the hub, so the ids are from memory and some may be wrong or gated. Run
+#
+#     python scripts/model_sweep.py --preflight
+#
+# which resolves every id and prints the hidden size, and therefore how many
+# distinct spans that model's map nulls need (~2x hidden). Our pool holds 8000,
+# so a 4096-wide model cannot support them and will report them as untestable
+# rather than printing a number.
+#
+# Keep the reference model first so the sweep reproduces the known row early.
+
+Qwen/Qwen3.5-2B
+Qwen/Qwen2-VL-2B-Instruct
+Qwen/Qwen2-VL-7B-Instruct
+Qwen/Qwen2.5-VL-3B-Instruct
+Qwen/Qwen2.5-VL-7B-Instruct
+llava-hf/llava-1.5-7b-hf
+llava-hf/llava-v1.6-mistral-7b-hf
+google/gemma-3-4b-it

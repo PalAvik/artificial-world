@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "freeflow"
+version = "0.1.0"
+description = "Cross-modal token substitutability in small vision-language models"
+requires-python = ">=3.10"
+
+# Runtime dependencies of the package itself. The heavier training-side tools
+# (accelerate, peft, bitsandbytes, wandb, flash-attn) belong to the cluster
+# environment rather than here — see docs/ENVIRONMENT.md.
+dependencies = [
+    "torch>=2.5",
+    "transformers>=4.57",
+    "numpy",
+    "scikit-learn",
+    "pillow",
+    "pyyaml",
+    # Not optional: matplotlib's bundled TTFs are the guaranteed font source
+    # for Tier B rendering, which is why no root access is needed.
+    "matplotlib",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "pyflakes"]
+
+[tool.setuptools.packages.find]
+include = ["freeflow*"]
+
+[tool.pytest.ini_options]
+# Put the repo root on sys.path so `pytest` works the same as
+# `python -m pytest`, which only worked because the latter adds cwd.
+pythonpath = ["."]
+testpaths = ["tests"]
